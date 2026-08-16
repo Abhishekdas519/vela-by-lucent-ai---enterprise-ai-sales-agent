@@ -223,6 +223,30 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
 
         onUpdateLeads(finishedLeads);
 
+        // Persist call log to database
+        try {
+          const finishedLead = finishedLeads.find(l => l.id === lead.id);
+          if (finishedLead) {
+            fetch('/api/db/call-logs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                clientId: client.id,
+                leadName: lead.name,
+                leadPhone: lead.phone,
+                leadCompany: lead.company,
+                callDurationSeconds: result.callDurationSeconds || 120,
+                disposition: 'completed',
+                sentiment: result.sentiment || 'positive',
+                conversionChance: result.conversionChance || 75,
+                aiConclusion: result.aiConclusion || '',
+                transcript: result.transcript || [],
+                followupDraft: result.followupDraft || null,
+              })
+            }).catch(() => {});
+          }
+        } catch {}
+
         // Deduct talktime minutes
         const usedMins = Math.ceil((result.callDurationSeconds || 120) / 60);
         onUpdateClient({
@@ -282,6 +306,31 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
       });
 
       onUpdateLeads(finishedLeads);
+
+      // Persist single call log to database
+      try {
+        const finishedLead = finishedLeads.find(l => l.id === lead.id);
+        if (finishedLead) {
+          fetch('/api/db/call-logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clientId: client.id,
+              leadName: lead.name,
+              leadPhone: lead.phone,
+              leadCompany: lead.company,
+              callDurationSeconds: result.callDurationSeconds || 120,
+              disposition: 'completed',
+              sentiment: result.sentiment || 'positive',
+              conversionChance: result.conversionChance || 80,
+              aiConclusion: result.aiConclusion || '',
+              transcript: result.transcript || [],
+              followupDraft: result.followupDraft || null,
+            })
+          }).catch(() => {});
+        }
+      } catch {}
+
       const usedMins = Math.ceil((result.callDurationSeconds || 120) / 60);
       onUpdateClient({
         ...client,

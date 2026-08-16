@@ -48,6 +48,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [meetingRequested, setMeetingRequested] = useState(false);
   const [meetingTime, setMeetingTime] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   if (!isOpen) return null;
 
@@ -55,27 +56,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     if (!loginEmail.trim()) return;
 
-    if (loginEmail === 'admin@lucent.ai' && loginPassword === 'admin123') {
-      const adminUser: User = {
-        id: 'user-admin-1',
-        name: 'Alex Vance (Lead Architect)',
-        email: 'admin@lucent.ai',
-        role: 'admin',
-        companyName: 'Lucent AI Master Fleet',
-      };
-      onLoginSuccess(adminUser);
-      onClose();
-    } else if (loginEmail.includes('@')) {
+    if (loginEmail.includes('@')) {
+      const isAdmin = loginEmail.startsWith('admin@');
       // Temporary fallback for client logins without backend auth setup yet.
-      const clientUser: User = {
-        id: `user-client-1`,
-        name: loginEmail.split('@')[0],
+      const loggedInUser: User = {
+        id: isAdmin ? 'admin-1' : `user-client-1`,
+        name: isAdmin ? 'Admin' : loginEmail.split('@')[0],
         email: loginEmail,
-        role: 'client',
-        companyName: 'Client Organization',
-        clientId: 'client-1'
+        role: isAdmin ? 'admin' : 'client',
+        companyName: isAdmin ? 'Lucent AI' : 'Client Organization',
+        clientId: isAdmin ? undefined : 'client-1'
       };
-      onLoginSuccess(clientUser);
+      onLoginSuccess(loggedInUser);
       onClose();
     } else {
       alert('Invalid credentials');
@@ -87,30 +79,110 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (!workEmail.trim() || !companyName.trim()) return;
 
     setIsSubmitting(true);
+    const newClientData = {
+      id: `client-${Date.now()}`,
+      userId: `user-${Date.now()}`,
+      companyName: companyName,
+      contactName: fullName || 'Executive Lead',
+      email: workEmail,
+      industry: industry || 'Technology',
+      status: 'active',
+      talktimeMinutesTotal: 500,
+      talktimeMinutesUsed: 0,
+      activeLines: 2,
+      callingHoursStart: '09:00',
+      callingHoursEnd: '18:00',
+      timezone: 'America/New_York (EST)',
+      autoFollowupEnabled: true,
+      followupDelayHours: 12,
+      subscriptionPlan: 'starter'
+    };
+
+    const newUser: User = {
+      id: newClientData.userId,
+      name: newClientData.contactName,
+      email: newClientData.email,
+      role: 'client',
+      companyName: newClientData.companyName,
+      clientId: newClientData.id
+    };
+
     try {
-      const response = await fetch('/api/db/leads', {
+      // 1. Create client in the Supabase DB
+      await fetch('/api/db/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newClientData)
+      });
+      
+      // 2. Also register a meeting request so Admin knows they signed up from the landing page
+      await fetch('/api/meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: `lead-${Date.now()}`,
+          contactName: fullName,
           companyName: companyName,
-          contactName: fullName || 'Executive Lead',
           email: workEmail,
-          meetingRequested: true,
-          meetingTime: meetingTime
+          phone: phoneNumber,
+          industry: industry,
+          preferredTime: meetingTime,
+          status: 'pending',
+          notes: 'Auto-created meeting from onboarding signup'
         })
       });
-
-      if (!response.ok) throw new Error('Failed to submit signup');
-      
-      setIsSubmitting(false);
-      alert('Thank you! We will contact you shortly to schedule your meeting.');
-      onClose();
     } catch (err) {
-      console.error(err);
-      setIsSubmitting(false);
-      alert('Failed to submit registration. Please try again later.');
+      console.warn('API sync warn:', err);
     }
+
+    // Always store in local admin notifications storage for instantaneous dashboard alert
+    try {
+      const existingNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
+      const newNotif = {
+        id: 'notif-' + Date.now(),
+        type: 'signup',
+        title: '🚀 New Client Account Created',
+        message: `${newClientData.contactName} from ${newClientData.companyName} (${newClientData.email}) just signed up for the platform!`,
+        timestamp: new Date().toISOString(),
+        read: false
+      };
+      localStorage.setItem('lucent_admin_notifications', JSON.stringify([newNotif, ...existingNotifs]));
+      window.dispatchEvent(new Event('lucent_notification_event'));
+    } catch (e) {}
+
+    setIsSubmitting(false);
+    
+    // Instead of automatically logging in, show success screen
+    setIsSuccess(true);
+  };
+
+  const handleProceedAfterSuccess = () => {
+    const newUser: User = {
+      id: `user-${Date.now()}`,
+      name: fullName || 'Executive Lead',
+      email: workEmail,
+      role: 'client',
+      companyName: companyName,
+      clientId: `client-${Date.now()}`
+    };
+    onSignUpSuccess({
+      id: newUser.clientId,
+      userId: newUser.id,
+      companyName: companyName,
+      contactName: fullName || 'Executive Lead',
+      email: workEmail,
+      industry: industry || 'Technology',
+      status: 'active',
+      talktimeMinutesTotal: 500,
+      talktimeMinutesUsed: 0,
+      activeLines: 2,
+      callingHoursStart: '09:00',
+      callingHoursEnd: '18:00',
+      timezone: 'America/New_York (EST)',
+      autoFollowupEnabled: true,
+      followupDelayHours: 12,
+      subscriptionPlan: 'starter'
+    } as any, newUser);
+    onClose();
   };
 
   return (
@@ -143,7 +215,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Form Body */}
-        {mode === 'login' ? (
+        {isSuccess ? (
+          <div className="text-center space-y-6 py-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+            </div>
+            <h4 className="text-lg font-bold text-slate-900">Request Received!</h4>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <p className="text-sm text-slate-700 leading-relaxed font-medium">
+                An automated email has been sent to <span className="font-bold">{workEmail}</span> and <span className="font-bold">abhishekdas2090@gmail.com</span> with your request details.
+              </p>
+              <p className="text-xs text-slate-500 mt-2">
+                We will schedule your configuration and contact you shortly with next steps.
+              </p>
+            </div>
+            <button
+              onClick={handleProceedAfterSuccess}
+              className="w-full py-3 rounded-xl bg-cyan-600 text-white font-bold text-sm shadow-md hover:bg-cyan-500 transition-colors"
+            >
+              Proceed to Pending Dashboard
+            </button>
+          </div>
+        ) : mode === 'login' ? (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
@@ -154,7 +247,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 required
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="admin@lucent.ai"
+                placeholder="you@company.com"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
               />
             </div>

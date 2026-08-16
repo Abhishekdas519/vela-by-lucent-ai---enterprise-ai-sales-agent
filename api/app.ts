@@ -9,10 +9,10 @@ app.use(cors());
 
 app.use(express.json());
 
-// In-memory stores (serverless-scoped; dashboard state is in localStorage on client)
+import { requireAuth, AuthRequest } from '../src/middleware/auth.js';
+import { getOrCreateUser, getAllClients, createClient, getClientById, createLead, getLeads, createTalktimeRequest, getTalktimeRequests, updateTalktimeRequestStatus, updateClientTalktime, createCallLog, getClientLogs, createMeeting, getMeetings, updateMeetingStatus } from '../src/db/queries.js';
+
 let adminNotifications: any[] = [];
-let leadsDb: any[] = [];
-let ordersDb: any[] = [];
 
 // Initialize server-side Gemini client
 const ai = new GoogleGenAI({
@@ -24,7 +24,7 @@ const ai = new GoogleGenAI({
   }
 });
 
-// Helper for calling Gemini with model fallback & error resilience
+// Fast Gemini 3.5 Flash engine optimized for voice conversations
 async function generateWithFallback(params: {
   contents: any;
   systemInstruction?: string;
@@ -34,27 +34,27 @@ async function generateWithFallback(params: {
     throw new Error('No GEMINI_API_KEY set');
   }
 
-  const models = ['gemini-3.5-flash', 'gemini-3.5-flash-lite'];
-  let lastError: any = null;
-
-  for (const model of models) {
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: params.contents,
-        config: {
-          systemInstruction: params.systemInstruction,
-          ...(params.config || {})
-        }
-      });
-      if (response && response.text) {
-        return response.text;
-      }
-    } catch (err: any) {
-      lastError = err;
+  // 1500ms timeout for ultra-fast voice turnarounds
+  const generatePromise = ai.models.generateContent({
+    model: 'gemini-3.5-flash',
+    contents: params.contents,
+    config: {
+      systemInstruction: params.systemInstruction,
+      maxOutputTokens: 80, // Crisp, natural phone-length responses
+      temperature: 0.6,
+      ...(params.config || {})
     }
+  });
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Voice latency timeout')), 1800)
+  );
+
+  const response = (await Promise.race([generatePromise, timeoutPromise])) as any;
+  if (response && response.text) {
+    return response.text;
   }
-  throw lastError || new Error('All model attempts failed');
+  throw new Error('No response generated');
 }
 
 // Health check endpoint
@@ -68,18 +68,40 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Auth sync — graceful no-op without database
-app.post('/api/auth/sync', (req, res) => {
-  res.json({ success: true, message: 'Auth sync acknowledged (in-memory mode)' });
+// Sync authenticated user to Cloud SQL database
+app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.user?.uid;
+    const email = req.user?.email || '';
+    const name = (req.user as any)?.name || email.split('@')[0];
+    if (!uid) {
+      return res.status(400).json({ error: 'Missing UID' });
+    }
+    const user = await getOrCreateUser(uid, email, name);
+    res.json({ success: true, user });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Database sync error' });
+  }
 });
 
-// Database Clients — in-memory fallback
-app.get('/api/db/clients', (req, res) => {
-  res.json({ success: true, data: [] });
+// Database Clients List
+app.get('/api/db/clients', async (req, res) => {
+  try {
+    const clientsList = await getAllClients();
+    res.json({ success: true, data: clientsList });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch clients from database' });
+  }
 });
 
-app.post('/api/db/clients', (req, res) => {
-  res.json({ success: true, data: { ...req.body, id: 'client-' + Date.now() } });
+// Create new Client profile
+app.post('/api/db/clients', async (req, res) => {
+  try {
+    const newClient = await createClient(req.body);
+    res.json({ success: true, data: newClient });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to save client to database' });
+  }
 });
 
 // Real-time Chat / Voice simulation turn for Live Interactive Landing Page Demo
@@ -244,9 +266,9 @@ Generate a realistic 4-to-6 turn phone dialog transcript, followed by a structur
 // Vapi Public Config for Web SDK
 app.get('/api/vapi/config', (req, res) => {
   res.json({
-    publicKey: '5164eb53-7e70-461c-a272-33c896083855',
+    publicKey: process.env.VAPI_PUBLIC_KEY || null,
     defaultAssistantId: process.env.VAPI_ASSISTANT_ID || null,
-    hasVapi: true,
+    hasVapi: !!process.env.VAPI_PUBLIC_KEY,
   });
 });
 
@@ -353,45 +375,192 @@ app.post('/api/admin/notifications/mark-read', (req, res) => {
 });
 
 // Leads / Signups
-app.post('/api/db/leads', (req, res) => {
-  const newLead = { ...req.body, id: req.body.id || 'lead-' + Date.now(), createdAt: new Date().toISOString() };
-  leadsDb.push(newLead);
-  
+app.post('/api/db/leads', async (req, res) => {
+  const leadPayload = {
+    id: req.body.id || 'lead-' + Date.now(),
+    companyName: req.body.companyName || 'Enterprise Lead',
+    contactName: req.body.contactName || req.body.email?.split('@')[0] || 'Executive Prospect',
+    email: req.body.email || 'prospect@enterprise.com',
+  };
+
+  let savedLead = leadPayload;
+  try {
+    savedLead = await createLead(leadPayload);
+  } catch (err: any) {
+    console.warn('Database save warning for lead, continuing with in-memory lead:', err?.message);
+  }
+
   adminNotifications.unshift({
     id: 'notif-' + Date.now(),
     type: 'signup',
-    title: 'New Signup / Lead',
-    message: `${newLead.contactName || 'Someone'} from ${newLead.companyName || 'Unknown Company'} signed up.`,
+    title: '🚀 New Client Plan Signup / Lead',
+    message: `${savedLead.contactName} from ${savedLead.companyName} (${savedLead.email}) just signed up for a plan!`,
     timestamp: new Date().toISOString(),
     read: false
   });
-  
-  res.json({ success: true, data: newLead });
+
+  res.json({ success: true, data: savedLead });
 });
 
-app.get('/api/db/leads', (req, res) => {
-  res.json({ success: true, data: leadsDb });
+app.get('/api/db/leads', async (req, res) => {
+  try {
+    const allLeads = await getLeads();
+    res.json({ success: true, data: allLeads });
+  } catch (error: any) {
+    res.json({ success: true, data: [] });
+  }
 });
 
 // Talk-time Requests
-app.post('/api/db/talktime-requests', (req, res) => {
-  const newOrder = { ...req.body, id: 'order-' + Date.now(), createdAt: new Date().toISOString() };
-  ordersDb.push(newOrder);
-  
+app.post('/api/db/talktime-requests', async (req, res) => {
+  const orderPayload = {
+    id: 'order-' + Date.now(),
+    clientId: req.body.clientId || 'Client Account',
+    minutesRequested: req.body.minutesRequested || 500,
+    amountDue: req.body.totalAmount || req.body.amountDue || 45,
+  };
+
+  let savedOrder = orderPayload;
+  try {
+    savedOrder = await createTalktimeRequest(orderPayload);
+  } catch (err: any) {
+    console.warn('Database save warning for talktime request, continuing:', err?.message);
+  }
+
   adminNotifications.unshift({
     id: 'notif-' + Date.now(),
     type: 'purchase_request',
-    title: 'Talk-Time Purchase Request',
-    message: `Client ${newOrder.clientId || ''} requested ${newOrder.minutesRequested || 0} minutes for ${newOrder.totalAmount || 0}.`,
+    title: '⚡ New Talk-Time Minute Purchase',
+    message: `Client ${savedOrder.clientId} purchased ${savedOrder.minutesRequested?.toLocaleString()} minutes ($${savedOrder.amountDue}).`,
     timestamp: new Date().toISOString(),
     read: false
   });
-  
-  res.json({ success: true, data: newOrder });
+
+  res.json({ success: true, data: savedOrder });
 });
 
-app.get('/api/db/talktime-requests', (req, res) => {
-  res.json({ success: true, data: ordersDb });
+app.get('/api/db/talktime-requests', async (req, res) => {
+  try {
+    const orders = await getTalktimeRequests();
+    res.json({ success: true, data: orders });
+  } catch (error: any) {
+    res.json({ success: true, data: [] });
+  }
+});
+
+// Approve talktime request and credit minutes to client
+app.post('/api/db/talktime-requests/:id/approve', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await updateTalktimeRequestStatus(id, 'approved');
+    if (updated && updated.clientId && updated.minutesRequested) {
+      try { await updateClientTalktime(updated.clientId, updated.minutesRequested); } catch(e) {}
+    }
+    adminNotifications.unshift({
+      id: 'notif-' + Date.now(),
+      type: 'order_approved',
+      title: '✅ Order Approved',
+      message: `Talktime order ${id} approved and ${updated?.minutesRequested || 0} minutes credited.`,
+      timestamp: new Date().toISOString(),
+      read: false
+    });
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reject talktime request
+app.post('/api/db/talktime-requests/:id/reject', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await updateTalktimeRequestStatus(id, 'rejected');
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Call logs — save a simulated call result
+app.post('/api/db/call-logs', async (req, res) => {
+  try {
+    const logData = {
+      id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      clientId: req.body.clientId || null,
+      leadName: req.body.leadName || 'Unknown Lead',
+      leadPhone: req.body.leadPhone || '',
+      leadCompany: req.body.leadCompany || '',
+      callDurationSeconds: req.body.callDurationSeconds || 0,
+      disposition: req.body.disposition || 'completed',
+      sentiment: req.body.sentiment || 'neutral',
+      conversionChance: req.body.conversionChance || 0,
+      aiConclusion: req.body.aiConclusion || '',
+      transcript: req.body.transcript ? JSON.stringify(req.body.transcript) : null,
+      followupDraft: req.body.followupDraft ? JSON.stringify(req.body.followupDraft) : null,
+    };
+    const saved = await createCallLog(logData);
+    res.json({ success: true, data: saved });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get call logs for a client
+app.get('/api/db/call-logs/:clientId', async (req, res) => {
+  try {
+    const logs = await getClientLogs(req.params.clientId);
+    res.json({ success: true, data: logs });
+  } catch (error: any) {
+    res.json({ success: true, data: [] });
+  }
+});
+
+// Meetings — book a meeting with Lucent AI team
+app.post('/api/meetings', async (req, res) => {
+  const meetingPayload = {
+    id: 'mtg-' + Date.now(),
+    contactName: req.body.contactName || req.body.fullName || 'Executive',
+    companyName: req.body.companyName || 'Enterprise',
+    email: req.body.email || '',
+    phone: req.body.phone || null,
+    industry: req.body.industry || null,
+    preferredTime: req.body.preferredTime || null,
+    notes: req.body.notes || null,
+    status: 'pending',
+  };
+  let savedMeeting = meetingPayload;
+  try {
+    savedMeeting = await createMeeting(meetingPayload) as any;
+  } catch(err: any) {
+    console.warn('Meeting DB save warning, continuing:', err?.message);
+  }
+  adminNotifications.unshift({
+    id: 'notif-' + Date.now(),
+    type: 'meeting_request',
+    title: '📅 New Meeting Request',
+    message: `${savedMeeting.contactName} from ${savedMeeting.companyName} (${savedMeeting.email}) requested a strategy meeting${savedMeeting.preferredTime ? ` at ${new Date(savedMeeting.preferredTime).toLocaleString()}` : ''}.`,
+    timestamp: new Date().toISOString(),
+    read: false
+  });
+  res.json({ success: true, data: savedMeeting });
+});
+
+app.get('/api/meetings', async (req, res) => {
+  try {
+    const allMeetings = await getMeetings();
+    res.json({ success: true, data: allMeetings });
+  } catch (error: any) {
+    res.json({ success: true, data: [] });
+  }
+});
+
+app.patch('/api/meetings/:id/status', async (req, res) => {
+  try {
+    const updated = await updateMeetingStatus(req.params.id, req.body.status);
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Vapi Outbound Instant Callback
@@ -399,12 +568,16 @@ app.post('/api/vapi/outbound', async (req, res) => {
   const { phoneNumber } = req.body;
   
   if (!process.env.VAPI_API_KEY) {
-    return res.status(500).json({ error: 'VAPI_API_KEY is missing. Please add it to your environment variables.' });
+    return res.status(500).json({ error: 'VAPI_API_KEY is missing in Vercel environment variables.' });
   }
   
+  if (!process.env.VAPI_PHONE_NUMBER_ID) {
+    return res.status(500).json({ error: 'VAPI_PHONE_NUMBER_ID is missing in Vercel environment variables. You must add a Vapi Phone Number ID to dial outbound.' });
+  }
+
   try {
     const payload: Record<string, any> = {
-      phoneNumberId: process.env.VAPI_PHONE_NUMBER_ID || "YOUR_VAPI_PHONE_NUMBER_ID",
+      phoneNumberId: process.env.VAPI_PHONE_NUMBER_ID,
       customer: {
         number: phoneNumber
       }

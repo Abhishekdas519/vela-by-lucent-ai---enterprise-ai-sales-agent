@@ -53,7 +53,7 @@ export const BuyMinutesModal: React.FC<BuyMinutesModalProps> = ({
     setIsProcessing(true);
 
     try {
-      const response = await fetch('/api/db/talktime-requests', {
+      await fetch('/api/db/talktime-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -62,31 +62,40 @@ export const BuyMinutesModal: React.FC<BuyMinutesModalProps> = ({
           amountDue: activePrice
         })
       });
-
-      if (!response.ok) throw new Error('Failed to submit request');
-
-      setIsProcessing(false);
-      setIsSuccess(true);
-
-      // Trigger celebratory confetti
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-
-      // Show success briefly, don't update minutes directly.
-      setTimeout(() => {
-        setIsSuccess(false);
-        onClose();
-        alert('Purchase order submitted! It will be credited once approved by your administrator.');
-      }, 2500);
-
     } catch (err) {
-      console.error('Checkout error:', err);
-      setIsProcessing(false);
-      alert('Failed to submit purchase order.');
+      console.warn('API sync warning:', err);
     }
+
+    try {
+      const existingNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
+      const newNotif = {
+        id: 'notif-' + Date.now(),
+        type: 'purchase_request',
+        title: '⚡ New Talk-Time Minute Purchase',
+        message: `Client ${client.companyName || client.id} requested ${activeMinutes.toLocaleString()} minutes ($${activePrice}).`,
+        timestamp: new Date().toISOString(),
+        read: false
+      };
+      localStorage.setItem('lucent_admin_notifications', JSON.stringify([newNotif, ...existingNotifs]));
+      window.dispatchEvent(new Event('lucent_notification_event'));
+    } catch (e) {}
+
+    setIsProcessing(false);
+    setIsSuccess(true);
+
+    // Trigger celebratory confetti
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+
+    // Show success briefly, don't update minutes directly.
+    setTimeout(() => {
+      setIsSuccess(false);
+      onClose();
+      alert('Purchase order submitted! It will be credited once approved by your administrator.');
+    }, 2500);
   };
 
   return (

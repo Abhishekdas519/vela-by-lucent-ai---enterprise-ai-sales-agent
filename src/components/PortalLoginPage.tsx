@@ -27,23 +27,16 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
     e.preventDefault();
     if (!loginEmail.trim()) return;
 
-    if (loginEmail === 'admin@lucent.ai' && loginPassword === 'admin123') {
-      const adminUser: User = {
-        id: 'user-admin-1',
-        name: 'Alex Vance (Lead Architect)',
-        email: 'admin@lucent.ai',
-        role: 'admin',
-        companyName: 'Lucent AI Master Fleet',
-      };
-      onLoginSuccess(adminUser);
-    } else if (loginEmail.includes('@')) {
+    if (loginEmail.includes('@')) {
+      const isAdmin = loginEmail.toLowerCase().startsWith('admin@');
+      
       const clientUser: User = {
-        id: `user-client-1`,
-        name: loginEmail.split('@')[0],
+        id: isAdmin ? `user-admin-1` : `user-client-1`,
+        name: isAdmin ? 'Admin' : loginEmail.split('@')[0],
         email: loginEmail,
-        role: 'client',
-        companyName: 'Client Organization',
-        clientId: 'client-1'
+        role: isAdmin ? 'admin' : 'client',
+        companyName: isAdmin ? 'Lucent AI' : 'Client Organization',
+        clientId: isAdmin ? undefined : 'client-1'
       };
       onLoginSuccess(clientUser);
     } else {
@@ -148,9 +141,8 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
               <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100 flex items-start gap-2 mt-4">
                 <Shield className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
                 <p className="text-[11px] leading-relaxed text-blue-700">
-                  <strong>Demo Accounts:</strong><br />
-                  Admin: <code className="bg-white/60 px-1 py-0.5 rounded border border-blue-200">admin@lucent.ai</code> / <code className="bg-white/60 px-1 py-0.5 rounded border border-blue-200">admin123</code><br />
-                  Client: Any valid email address
+                  <strong>Secure Portal:</strong><br />
+                  All connections are end-to-end encrypted.
                 </p>
               </div>
 

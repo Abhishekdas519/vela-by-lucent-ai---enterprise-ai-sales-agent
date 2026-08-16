@@ -48,14 +48,18 @@ export const talktimeRequests = pgTable('talktime_requests', {
 
 export const leads = pgTable('leads', {
   id: text('id').primaryKey(),
+  clientId: text('client_id'),
   companyName: text('company_name').notNull(),
   contactName: text('contact_name').notNull(),
   email: text('email').notNull(),
+  phone: text('phone'),
+  industry: text('industry'),
   status: text('status').default('pending_configuration').notNull(),
   meetingRequested: boolean('meeting_requested').default(false).notNull(),
   meetingTime: text('meeting_time'),
   createdAt: timestamp('created_at').defaultNow(),
 });
+
 export const callLogs = pgTable('call_logs', {
   id: text('id').primaryKey(),
   clientId: text('client_id').references(() => clients.id),
@@ -65,8 +69,24 @@ export const callLogs = pgTable('call_logs', {
   callDurationSeconds: integer('call_duration_seconds').default(0).notNull(),
   disposition: text('disposition').default('completed').notNull(),
   sentiment: text('sentiment').default('positive').notNull(),
+  conversionChance: integer('conversion_chance').default(0),
+  aiConclusion: text('ai_conclusion'),
   transcript: text('transcript'),
+  followupDraft: text('followup_draft'),
   recordingUrl: text('recording_url'),
   scheduledCallback: text('scheduled_callback'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const meetings = pgTable('meetings', {
+  id: text('id').primaryKey(),
+  contactName: text('contact_name').notNull(),
+  companyName: text('company_name').notNull(),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  industry: text('industry'),
+  preferredTime: text('preferred_time'),
+  status: text('status').default('pending').notNull(), // pending, confirmed, cancelled
+  notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
 });

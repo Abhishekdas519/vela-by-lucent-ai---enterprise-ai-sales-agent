@@ -1,8 +1,7 @@
 import { db } from './index.js';
-import { users, clients, callLogs, leads, talktimeRequests } from './schema.js';
+import { users, clients, callLogs, leads, talktimeRequests, meetings } from './schema.js';
 import { eq, desc } from 'drizzle-orm';
 
-// ... existing code ...
 export async function getOrCreateUser(uid: string, email: string, displayName?: string) {
   try {
     const result = await db.insert(users)
@@ -22,7 +21,7 @@ export async function getOrCreateUser(uid: string, email: string, displayName?: 
     return result[0];
   } catch (error) {
     console.error("Database user query failed:", error);
-    throw new Error("Database user query failed. Please try again later.", { cause: error });
+    throw new Error("Database user query failed.", { cause: error });
   }
 }
 
@@ -45,12 +44,32 @@ export async function createClient(clientData: typeof clients.$inferInsert) {
   }
 }
 
+export async function getClientById(clientId: string) {
+  try {
+    const result = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database get client failed:", error);
+    return null;
+  }
+}
+
 export async function getClientLogs(clientId: string) {
   try {
     return await db.select().from(callLogs).where(eq(callLogs.clientId, clientId)).orderBy(desc(callLogs.createdAt));
   } catch (error) {
     console.error("Database call logs query failed:", error);
     throw new Error("Database call logs query failed.", { cause: error });
+  }
+}
+
+export async function createCallLog(logData: typeof callLogs.$inferInsert) {
+  try {
+    const result = await db.insert(callLogs).values(logData).returning();
+    return result[0];
+  } catch (error) {
+    console.error("Database create call log failed:", error);
+    throw new Error("Database create call log failed.", { cause: error });
   }
 }
 
@@ -117,5 +136,37 @@ export async function updateClientTalktime(clientId: string, addedMinutes: numbe
   } catch (error) {
     console.error("Database update client talktime failed:", error);
     throw new Error("Database update client talktime failed.", { cause: error });
+  }
+}
+
+export async function createMeeting(meetingData: typeof meetings.$inferInsert) {
+  try {
+    const result = await db.insert(meetings).values(meetingData).returning();
+    return result[0];
+  } catch (error) {
+    console.error("Database create meeting failed:", error);
+    throw new Error("Database create meeting failed.", { cause: error });
+  }
+}
+
+export async function getMeetings() {
+  try {
+    return await db.select().from(meetings).orderBy(desc(meetings.createdAt));
+  } catch (error) {
+    console.error("Database get meetings failed:", error);
+    throw new Error("Database get meetings failed.", { cause: error });
+  }
+}
+
+export async function updateMeetingStatus(meetingId: string, status: string) {
+  try {
+    const result = await db.update(meetings)
+      .set({ status })
+      .where(eq(meetings.id, meetingId))
+      .returning();
+    return result[0];
+  } catch (error) {
+    console.error("Database update meeting status failed:", error);
+    throw new Error("Database update meeting status failed.", { cause: error });
   }
 }

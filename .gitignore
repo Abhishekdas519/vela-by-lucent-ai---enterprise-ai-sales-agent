@@ -10,3 +10,4 @@ coverage/
 .antigravity/
 .vscode/
 .vercel
+deploy.sh

@@ -1,70 +1,44 @@
 import React, { useState } from 'react';
-import { 
-  Award, 
-  TrendingUp, 
-  DollarSign, 
-  Users, 
-  Clock, 
-  CheckCircle2, 
-  XCircle, 
-  ShieldCheck, 
-  Zap, 
-  Sparkles, 
-  ArrowRight, 
-  BarChart3 
-} from 'lucide-react';
-import { CALL_CENTER_COMPARISONS } from '../data/initialData';
+import { Target, BarChart3, TrendingUp, DollarSign, CheckCircle2, ArrowRight, Zap } from 'lucide-react';
 
-interface ProofOfResultsProps {
-  onOpenSignUp: () => void;
-}
-
-export const ProofOfResults: React.FC<ProofOfResultsProps> = ({ onOpenSignUp }) => {
+export const ProofOfResults: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSignUp }) => {
   const [repsCount, setRepsCount] = useState(5);
-  const [hourlyWage, setHourlyWage] = useState(32);
-  const [monthlyDials, setMonthlyDials] = useState(15000);
+  const [hourlyWage, setHourlyWage] = useState(25);
+  const [callVolume, setCallVolume] = useState(2500);
 
-  // Calculations
-  const humanMonthlyCost = repsCount * (hourlyWage * 160) + (repsCount * 450); // wages + telecom/management overhead
+  // Math for ROI Calculator
+  const humanMonthlyCost = repsCount * hourlyWage * 160; // 160 hours/month
   const humanAnnualCost = humanMonthlyCost * 12;
 
-  // Average call is ~2 minutes. 15,000 dials with 25% connection = 3,750 connected calls * 2.2 mins = 8,250 talktime mins
-  const estimatedVelaMinutes = Math.round(monthlyDials * 0.25 * 2.2);
-  const velaMonthlyCost = 629 + (Math.max(0, estimatedVelaMinutes - 5000) * 0.10); // Growth plan rate with 10% discount
+  const estimatedVelaMinutes = Math.round(callVolume * 0.25 * 2.2);
+  const velaMonthlyCost = 629 + (Math.max(0, estimatedVelaMinutes - 5000) * 0.10);
   const velaAnnualCost = velaMonthlyCost * 12;
 
   const annualSavings = Math.max(0, humanAnnualCost - velaAnnualCost);
-  const savingsPercent = Math.round((annualSavings / humanAnnualCost) * 100);
+  const savingsPercent = humanAnnualCost > 0 ? Math.round((annualSavings / humanAnnualCost) * 100) : 0;
 
   return (
-    <section id="proof-section" className="py-20 bg-white/50 border-b border-slate-200 relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
-        
-        {/* Interactive ROI & Cost Savings Calculator */}
-        <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-50 border border-cyan-200 shadow-2xl shadow-cyan-100/30">
+    <section id="roi-section" className="py-24 bg-white border-b border-slate-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-16 items-center">
           
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            
-            {/* Controls Column */}
-            <div className="lg:col-span-6 space-y-6">
+          {/* Left: ROI Calculator */}
+          <div className="bg-slate-50 border border-slate-200 rounded-3xl p-8 lg:p-12 shadow-xl">
+            <div className="space-y-6">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-cyan-600 text-xs font-bold uppercase tracking-wider">
                   <DollarSign className="w-4 h-4" />
-                  <span>Interactive Call Center Cost Simulator</span>
+                  Cost Analysis
                 </div>
                 <h3 className="text-2xl font-extrabold text-slate-900">
-                  Calculate Your Annual Savings with Vela
+                  Calculate Your Annual Savings
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Adjust your current team size and call metrics to see immediate bottom-line impact.
-                </p>
               </div>
 
-              {/* Slider 1: Reps */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-semibold">
                   <span className="text-slate-600">Current Call Center Reps / SDRs:</span>
-                  <span className="text-cyan-600 font-mono font-bold text-sm">{repsCount} full-time seats</span>
+                  <span className="text-cyan-600 font-mono font-bold text-sm">{repsCount} Reps</span>
                 </div>
                 <input
                   type="range"
@@ -72,19 +46,13 @@ export const ProofOfResults: React.FC<ProofOfResultsProps> = ({ onOpenSignUp }) 
                   max="30"
                   value={repsCount}
                   onChange={(e) => setRepsCount(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                  <span>1 Rep</span>
-                  <span>15 Reps</span>
-                  <span>30 Reps</span>
-                </div>
               </div>
 
-              {/* Slider 2: Hourly Wage */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-slate-600">Average Rep Hourly Wage (inc. benefits):</span>
+                  <span className="text-slate-600">Average Rep Hourly Wage:</span>
                   <span className="text-cyan-600 font-mono font-bold text-sm">${hourlyWage}/hour</span>
                 </div>
                 <input
@@ -93,134 +61,88 @@ export const ProofOfResults: React.FC<ProofOfResultsProps> = ({ onOpenSignUp }) 
                   max="60"
                   value={hourlyWage}
                   onChange={(e) => setHourlyWage(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                  <span>$15/hr</span>
-                  <span>$35/hr</span>
-                  <span>$60/hr</span>
-                </div>
               </div>
 
-              {/* Slider 3: Monthly Dials */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-slate-600">Desired Monthly Outbound Dials:</span>
-                  <span className="text-cyan-600 font-mono font-bold text-sm">{monthlyDials.toLocaleString()} dials</span>
+              <div className="space-y-4">
+                <div className="flex justify-between text-sm font-semibold text-slate-700">
+                  <span>Leads to dial per month</span>
+                  <span className="text-cyan-600 font-mono text-lg">{callVolume.toLocaleString()}</span>
                 </div>
                 <input
                   type="range"
-                  min="2000"
+                  min="500"
                   max="50000"
-                  step="1000"
-                  value={monthlyDials}
-                  onChange={(e) => setMonthlyDials(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  step="500"
+                  value={callVolume}
+                  onChange={(e) => setCallVolume(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                  <span>2k Dials</span>
-                  <span>25k Dials</span>
-                  <span>50k Dials</span>
-                </div>
               </div>
-            </div>
 
-            {/* Live Calculation Output Card */}
-            <div className="lg:col-span-6 p-6 rounded-2xl bg-white/90 border border-slate-200 space-y-6">
-              
-              <div className="grid grid-cols-2 gap-4 pb-4 border-b border-slate-200">
-                <div>
-                  <span className="text-[11px] text-slate-500 uppercase font-semibold block mb-1">
-                    Human Call Center Cost
-                  </span>
-                  <span className="text-2xl font-extrabold text-rose-400 font-mono">
+              <div className="grid sm:grid-cols-2 gap-4 pt-4">
+                <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                  <div className="text-sm font-semibold text-slate-500 mb-2">Traditional Call Center Cost</div>
+                  <div className="text-3xl font-mono text-slate-400 line-through decoration-rose-400/50 decoration-2">
                     ${Math.round(humanAnnualCost).toLocaleString()}
-                    <span className="text-xs text-slate-500 font-sans font-normal"> /yr</span>
-                  </span>
-                  <span className="text-[10px] text-slate-500 block mt-0.5">Wages, training, telecom & churn</span>
+                  </div>
                 </div>
-
-                <div>
-                  <span className="text-[11px] text-slate-500 uppercase font-semibold block mb-1">
-                    Vela Autonomous Fleet
-                  </span>
-                  <span className="text-2xl font-extrabold text-cyan-600 font-mono">
+                <div className="p-6 rounded-2xl bg-cyan-50 border border-cyan-100 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-3 opacity-[0.05]">
+                    <Zap className="w-16 h-16 text-cyan-600" />
+                  </div>
+                  <div className="text-sm font-bold text-cyan-800 mb-2">Vela AI Cost</div>
+                  <div className="text-4xl font-black font-mono text-cyan-600">
                     ${Math.round(velaAnnualCost).toLocaleString()}
-                    <span className="text-xs text-slate-500 font-sans font-normal"> /yr</span>
-                  </span>
-                  <span className="text-[10px] text-emerald-600 block mt-0.5 font-semibold">10% Below Market Rates</span>
+                  </div>
+                  <div className="mt-3 inline-block px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                    {savingsPercent}% Savings
+                  </div>
                 </div>
               </div>
+            </div>
+          </div>
 
-              {/* Total Savings Highlight */}
-              <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/80 to-cyan-950/80 border border-emerald-500/40 text-center space-y-1">
-                <span className="text-xs uppercase font-bold tracking-wider text-emerald-700">
-                  Estimated Net Annual Cost Savings
-                </span>
-                <div className="text-4xl sm:text-5xl font-extrabold text-slate-900 font-mono tracking-tight">
-                  ${Math.round(annualSavings).toLocaleString()}
-                </div>
-                <div className="inline-flex items-center gap-1.5 text-xs text-emerald-700 font-semibold pt-1">
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>{savingsPercent}% Direct Operating Margin Increase</span>
-                </div>
-              </div>
-
-              <button
-                id="btn-roi-onboard-cta"
-                onClick={onOpenSignUp}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/20 transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Lock In 10% Lower Pricing & Onboard Fleet</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
+          {/* Right: Social Proof & Metrics */}
+          <div className="space-y-8">
+            <div>
+              <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight">The numbers speak for themselves.</h3>
+              <p className="mt-4 text-slate-600">
+                Don't just take our word for it. Here is the aggregated performance across our enterprise fleet this month.
+              </p>
             </div>
 
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 shadow-sm hover:-translate-y-1 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center mb-4">
+                  <Target className="w-5 h-5 text-purple-600" />
+                </div>
+                <div className="text-3xl font-black font-mono text-slate-900 mb-1">3.4×</div>
+                <div className="text-sm font-semibold text-slate-600">Higher contact rate than human reps</div>
+              </div>
+              
+              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 shadow-sm hover:-translate-y-1 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center mb-4">
+                  <BarChart3 className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div className="text-3xl font-black font-mono text-slate-900 mb-1">14%</div>
+                <div className="text-sm font-semibold text-slate-600">Average conversion to booked meeting</div>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-slate-200">
+              <button 
+                onClick={onOpenSignUp}
+                className="group flex items-center gap-2 text-cyan-600 font-bold hover:text-cyan-700 transition-colors"
+              >
+                Start deploying your agent today
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
           </div>
 
         </div>
-
-        {/* Side-by-Side Comparison Matrix */}
-        <div className="space-y-6">
-          <div className="text-center space-y-2">
-            <h3 className="text-2xl font-extrabold text-slate-900">
-              Why Vela Outperforms Traditional BPOs & Basic Bots
-            </h3>
-            <p className="text-xs text-slate-500 max-w-2xl mx-auto">
-              Engineered with sub-450ms voice pipelines, automated 12-hour follow-ups, and native Twilio/Vapi infrastructure.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/90 shadow-xl">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-white/90 text-slate-600 border-b border-slate-200">
-                <tr>
-                  <th className="p-4 font-bold text-slate-700">Operational Capability</th>
-                  <th className="p-4 font-bold text-rose-400">Traditional Call Center (Human)</th>
-                  <th className="p-4 font-bold text-cyan-600">Vela AI by Lucent AI</th>
-                  <th className="p-4 font-bold text-emerald-600">Your Advantage</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-sans">
-                {CALL_CENTER_COMPARISONS.map((row, index) => (
-                  <tr key={index} className="hover:bg-white/40 transition">
-                    <td className="p-4 font-semibold text-slate-700">{row.metric}</td>
-                    <td className="p-4 text-slate-500">{row.humanCallCenter}</td>
-                    <td className="p-4 font-semibold text-cyan-700 font-mono">{row.velaAiAgent}</td>
-                    <td className="p-4">
-                      <span className="inline-flex items-center gap-1 font-bold text-emerald-600 font-mono">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        {row.savings}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
       </div>
     </section>
   );
