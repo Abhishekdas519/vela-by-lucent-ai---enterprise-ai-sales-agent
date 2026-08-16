@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Vela Backend API - Lambda Function URL
+
+Parameters:
+  DatabaseUrl:
+    Type: String
+    Description: Postgres connection string for Supabase
+    NoEcho: true
+    Default: "postgres://postgres:password@db.supabase.co:5432/postgres"
+  GeminiApiKey:
+    Type: String
+    Description: Gemini API Key
+    NoEcho: true
+    Default: ""
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: vela-backend-api
+      Runtime: nodejs20.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: lambda.handler
+      Timeout: 30
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            return { statusCode: 200, body: 'Deployment pending' };
+          };
+      Environment:
+        Variables:
+          DATABASE_URL: !Ref DatabaseUrl
+          GEMINI_API_KEY: !Ref GeminiApiKey
+
+  ApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn: !Ref ApiFunction
+      Cors:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - "*"
+        AllowHeaders:
+          - "*"
+        MaxAge: 86400
+
+  ApiFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+Outputs:
+  ApiEndpoint:
+    Description: The URL for the backend API
+    Value: !GetAtt ApiFunctionUrl.FunctionUrl

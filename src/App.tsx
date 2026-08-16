@@ -11,7 +11,7 @@ import {
   PricingPlan,
   MinutePackage
 } from './types';
-import { INITIAL_CLIENTS, INITIAL_LEADS, PRICING_PLANS } from './data/initialData';
+import { PRICING_PLANS } from './data/initialData';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { LiveVoiceDemo } from './components/LiveVoiceDemo';
@@ -49,16 +49,16 @@ export default function App() {
   // Data State
   const [clients, setClients] = useState<ClientProfile[]>(() => {
     const saved = localStorage.getItem('vela_clients');
-    return saved ? JSON.parse(saved) : INITIAL_CLIENTS;
+    return saved ? JSON.parse(saved) : [];
   });
 
-  const [activeClient, setActiveClient] = useState<ClientProfile>(() => {
-    return clients[0] || INITIAL_CLIENTS[0];
+  const [activeClient, setActiveClient] = useState<ClientProfile | null>(() => {
+    return clients[0] || null;
   });
 
   const [leads, setLeads] = useState<Lead[]>(() => {
     const saved = localStorage.getItem('vela_leads');
-    return saved ? JSON.parse(saved) : INITIAL_LEADS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -86,7 +86,7 @@ export default function App() {
       .then(data => {
         if (data?.success && Array.isArray(data.data) && data.data.length > 0) {
           setClients(data.data);
-          if (!activeClient || activeClient.id === 'client-1') {
+          if (!activeClient || (activeClient && !data.data.find((c: any) => c.id === activeClient.id))) {
             setActiveClient(data.data[0]);
           }
         }
@@ -391,7 +391,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'client_dashboard' && (
+        {currentView === 'client_dashboard' && activeClient && (
           <ClientDashboard
             client={activeClient}
             leads={leads}
@@ -400,6 +400,12 @@ export default function App() {
             onUpdateLeads={(updatedLeads) => setLeads(updatedLeads)}
             onOpenBuyMinutes={() => setIsBuyMinutesOpen(true)}
           />
+        )}
+
+        {currentView === 'client_dashboard' && !activeClient && (
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full"></div>
+          </div>
         )}
       </main>
 

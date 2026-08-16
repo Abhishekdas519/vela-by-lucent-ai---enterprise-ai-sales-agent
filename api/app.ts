@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
-
+import bcrypt from 'bcryptjs';
 const app = express();
 
 // Enable CORS for cross-origin requests from Vercel
@@ -60,27 +60,25 @@ app.post('/api/auth/signup', async (req, res) => {
 
     // Check if user already exists
     let existingUser = await getUserByEmail(cleanEmail);
-    let user = existingUser;
+    if (existingUser) {
+      return res.status(400).json({ error: 'User already exists with this email' });
+    }
 
-    if (!user) {
-      try {
-        user = await createUser({
-          uid: userId,
-          email: cleanEmail,
-          displayName: fullName || cleanEmail.split('@')[0],
-          passwordHash: password || null,
-          role
-        });
-      } catch (err: any) {
-        user = {
-          uid: userId,
-          email: cleanEmail,
-          displayName: fullName || cleanEmail.split('@')[0],
-          passwordHash: password || null,
-          role,
-          createdAt: new Date()
-        } as any;
-      }
+    const salt = bcrypt.genSaltSync(10);
+    const hashedPassword = password ? bcrypt.hashSync(password, salt) : null;
+
+    let user;
+    try {
+      user = await createUser({
+        uid: userId,
+        email: cleanEmail,
+        displayName: fullName || cleanEmail.split('@')[0],
+        passwordHash: hashedPassword,
+        role
+      });
+    } catch (err: any) {
+      console.error('Failed to create user:', err);
+      return res.status(500).json({ error: 'Failed to create user record' });
     }
 
     let clientProfile: any = null;
@@ -201,25 +199,21 @@ app.post('/api/auth/login', async (req, res) => {
 
     let user = await getUserByEmail(cleanEmail);
     if (!user) {
-      // Auto-create initial user record on valid sign-in
-      try {
-        user = await createUser({
-          uid: 'usr-' + Date.now(),
-          email: cleanEmail,
-          displayName: cleanEmail.split('@')[0],
-          passwordHash: password || null,
-          role
-        });
-      } catch (e) {
-        user = {
-          uid: 'usr-' + Date.now(),
-          email: cleanEmail,
-          displayName: cleanEmail.split('@')[0],
-          role
-        } as any;
-      }
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // Verify Password
+    if (user.passwordHash && password) {
+      const isBcrypt = user.passwordHash.startsWith('$2a$') || user.passwordHash.startsWith('$2b$');
+      const isValid = isBcrypt ? bcrypt.compareSync(password, user.passwordHash) : (password === user.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+    } else if (!user.passwordHash && !password) {
+      // Allow login without password if none was set previously
+    } else {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
     let clientProfile: any = null;
     if (role === 'client') {
       clientProfile = await getClientByEmail(cleanEmail);
