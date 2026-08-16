@@ -51,6 +51,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [onboardClient, setOnboardClient] = useState<ClientProfile | null>(null);
   const [twilioNumber, setTwilioNumber] = useState('');
   const [vapiId, setVapiId] = useState('');
+  const [customPassword, setCustomPassword] = useState('');
+  const [isOnboardingSaving, setIsOnboardingSaving] = useState(false);
   
   const authFetch = async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('vela_token');
@@ -178,46 +180,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (e) {}
   };
 
-  const handleOnboardSubmit = (e: React.FormEvent) => {
+  const handleOnboardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onboardClient) return;
 
-    const password = generatePassword();
-    const loginId = onboardClient.email;
-    
-    onUpdateClient({
-      ...onboardClient,
-      twilioPhoneNumber: twilioNumber,
-      vapiAssistantId: vapiId,
-      status: 'active'
-    });
+    setIsOnboardingSaving(true);
+    const pwd = customPassword.trim() || generatePassword();
+    const loginId = onboardClient.email.toLowerCase().trim();
 
-    setOnboardModalOpen(false);
+    try {
+      const res = await authFetch('/api/admin/provision-client', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: onboardClient.id,
+          email: loginId,
+          temporaryPassword: pwd,
+          twilioPhoneNumber: twilioNumber,
+          vapiAssistantId: vapiId,
+          companyName: onboardClient.companyName,
+          contactName: onboardClient.contactName
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to provision client');
+      }
 
-    // Generate automated email draft using mailto:
-    const subject = encodeURIComponent(`Welcome to Vela by Lucent AI - Your Autonomous Sales Agent is Ready`);
-    const body = encodeURIComponent(`Hi ${onboardClient.contactName},
+      if (data.client) {
+        onUpdateClient(data.client);
+      }
 
-Welcome to Vela! Your autonomous outbound voice agent has been fully provisioned and is ready to start dialing.
+      setOnboardModalOpen(false);
+      showToast(`✅ Customer provisioned! Login password: ${pwd}`);
 
-Here are your dedicated configuration details:
-Assigned Twilio Number: ${twilioNumber || 'Pending'}
-Vapi Assistant Node: ${vapiId || 'Auto-Provisioned'}
+      // Generate automated email draft using mailto:
+      const draft = data.welcomeEmailDraft;
+      const subject = encodeURIComponent(`Welcome to Vela by Lucent AI - Your Autonomous Sales Agent is Ready`);
+      const body = encodeURIComponent(draft || `Hi ${onboardClient.contactName},\n\nWelcome to Vela! Your autonomous outbound voice agent has been fully provisioned.\n\nCLIENT PORTAL ACCESS:\nLogin URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login\nLogin ID: ${loginId}\nTemporary Password: ${pwd}\n\nBest regards,\nAbhishek Das\nCEO, Lucent AI`);
 
----
-CLIENT PORTAL ACCESS:
-Login URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login
-Login ID: ${loginId}
-Temporary Password: ${password}
----
-
-Please log in to your portal to upload your first lead list and review your AI agent's system prompt.
-
-Best regards,
-Abhishek Das
-CEO, Lucent AI`);
-
-    window.location.href = `mailto:${onboardClient.email}?subject=${subject}&body=${body}`;
+      window.location.href = `mailto:${loginId}?subject=${subject}&body=${body}`;
+    } catch (err: any) {
+      showToast(`❌ Provisioning error: ${err.message}`);
+    } finally {
+      setIsOnboardingSaving(false);
+    }
   };
 
   const handleUpdateMeetingStatus = async (meetingId: string, status: string) => {
@@ -302,7 +308,8 @@ CEO, Lucent AI`);
 
   const handleCompleteOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
-    const clientId = `client-${Date.now().toString().slice(-4)}`;
+    setIsOnboardingSaving(true);
+
     const randomArea = ['415', '650', '312', '512', '206', '404'][Math.floor(Math.random() * 6)];
     const generatedTwilio = `+1 (${randomArea}) ${Math.floor(200 + Math.random() * 700)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -310,46 +317,52 @@ CEO, Lucent AI`);
       ? '+1 (800) 555-VAPI (Free Cloud DID)'
       : (twilioNumber || generatedTwilio);
 
-    const newClient: any = {
-      id: clientId,
+    const tempPassword = customPassword.trim() || generatePassword();
+    const cleanEmail = newEmail.toLowerCase().trim();
+
+    const payload = {
+      email: cleanEmail,
+      temporaryPassword: tempPassword,
       companyName: newCompanyName,
       contactName: newContactName,
-      email: newEmail,
       industry: newIndustry,
-      status: 'active',
-      vapiAssistantId: customVapiAssistantId || `asst_vapi_${clientId}`,
+      vapiAssistantId: customVapiAssistantId || undefined,
       vapiVoiceId: newVoiceId,
       vapiVoiceName: newVoiceName,
       twilioPhoneNumber: chosenPhoneNumber,
       systemPrompt: systemPrompt || `You are Vela representing ${newCompanyName}. Qualify prospects and book calendar meetings.`,
       firstMessage: firstMessage || `Hi! This is Vela calling on behalf of ${newCompanyName}. Do you have 60 seconds?`,
       talktimeMinutesTotal: initialMinutes,
-      talktimeMinutesUsed: 0,
       activeLines: activeLines,
-      callingHoursStart: callingStart,
-      callingHoursEnd: callingEnd,
-      timezone: 'America/New_York (EST)',
-      autoFollowupEnabled: true,
-      followupDelayHours: 12,
       subscriptionPlan,
-      stripeCustomerId,
-      createdAt: new Date().toISOString().split('T')[0],
+      stripeCustomerId
     };
 
     try {
-      const response = await authFetch('/api/db/clients', {
+      const response = await authFetch('/api/admin/create-client', {
         method: 'POST',
-        body: JSON.stringify(newClient),
+        body: JSON.stringify(payload),
       });
-      if (response.ok) {
-        const data = await response.json();
-        onAddNewClient(data.data || newClient);
-      } else {
-        onAddNewClient(newClient);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to onboard client');
       }
-    } catch (err) {
-      console.error('Failed to save client to DB:', err);
-      onAddNewClient(newClient);
+
+      if (data.client) {
+        onAddNewClient(data.client);
+      }
+
+      showToast(`✅ Client ${newCompanyName} onboarded! Login Password: ${tempPassword}`);
+
+      if (data.welcomeEmailDraft) {
+        const subject = encodeURIComponent(`Welcome to Vela by Lucent AI - Your Autonomous Sales Fleet is Ready`);
+        const body = encodeURIComponent(data.welcomeEmailDraft);
+        window.location.href = `mailto:${cleanEmail}?subject=${subject}&body=${body}`;
+      }
+    } catch (err: any) {
+      showToast(`❌ Onboarding error: ${err.message}`);
+    } finally {
+      setIsOnboardingSaving(false);
     }
 
     setIsOnboardingOpen(false);
@@ -358,6 +371,7 @@ CEO, Lucent AI`);
     setNewCompanyName('');
     setNewContactName('');
     setNewEmail('');
+    setCustomPassword('');
   };
 
   return (
@@ -368,19 +382,88 @@ CEO, Lucent AI`);
         {onboardModalOpen && onboardClient && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200">
-              <h2 className="text-xl font-bold mb-4">Onboard Customer: {onboardClient.companyName}</h2>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Onboard Customer: {onboardClient.companyName}</h2>
+                  <p className="text-xs text-slate-500 font-mono">{onboardClient.email}</p>
+                </div>
+                <button onClick={() => setOnboardModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
               <form onSubmit={handleOnboardSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Twilio Number</label>
-                  <input type="text" value={twilioNumber} onChange={(e) => setTwilioNumber(e.target.value)} className="w-full p-2 rounded-lg border border-slate-200" required />
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700">Temporary Portal Login Password</label>
+                    <button
+                      type="button"
+                      onClick={() => setCustomPassword(generatePassword())}
+                      className="text-[11px] font-bold text-cyan-600 hover:text-cyan-700 cursor-pointer"
+                    >
+                      🎲 Generate New
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={customPassword}
+                    onChange={(e) => setCustomPassword(e.target.value)}
+                    placeholder="e.g. VL-AB12CD!99"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    required
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    This password will be securely hashed with bcrypt into Supabase PostgreSQL and sent in the welcome email.
+                  </p>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Vapi Assistant ID</label>
-                  <input type="text" value={vapiId} onChange={(e) => setVapiId(e.target.value)} className="w-full p-2 rounded-lg border border-slate-200" required />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Twilio Number</label>
+                    <input
+                      type="text"
+                      value={twilioNumber}
+                      onChange={(e) => setTwilioNumber(e.target.value)}
+                      placeholder="+1 (800) 555-VELA"
+                      className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Vapi Assistant ID</label>
+                    <input
+                      type="text"
+                      value={vapiId}
+                      onChange={(e) => setVapiId(e.target.value)}
+                      placeholder="asst_vapi_..."
+                      className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono"
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={() => setOnboardModalOpen(false)} className="flex-1 py-2 rounded-lg border border-slate-200 text-xs font-bold hover:bg-slate-50">Cancel</button>
-                  <button type="submit" className="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500">Provision & Send Email</button>
+
+                <div className="flex gap-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setOnboardModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold hover:bg-slate-50 text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isOnboardingSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20"
+                  >
+                    {isOnboardingSaving ? (
+                      <span>Saving & Provisioning...</span>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Provision & Send Email</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </form>
             </div>
@@ -1057,6 +1140,29 @@ CEO, Lucent AI`);
                       <option value="Financial Services & Insurance">Financial Services & Insurance</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-600">Temporary Portal Login Password</label>
+                    <button
+                      type="button"
+                      onClick={() => setCustomPassword(generatePassword())}
+                      className="text-[11px] font-bold text-cyan-600 hover:text-cyan-700 cursor-pointer"
+                    >
+                      🎲 Generate New
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={customPassword}
+                    onChange={(e) => setCustomPassword(e.target.value)}
+                    placeholder="Auto-generated if left blank (e.g. VL-AB12CD!99)"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-900 focus:outline-none focus:border-cyan-500"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    The customer will use their email and this password to log in at <code>/login</code>.
+                  </p>
                 </div>
 
                 {/* Voice Model Selection */}

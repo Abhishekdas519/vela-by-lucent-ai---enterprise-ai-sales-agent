@@ -28,6 +28,8 @@ import {
   getClientById, 
   getClientByUserId, 
   getClientByEmail, 
+  updateClient,
+  updateUserPassword,
   createLead, 
   getLeads, 
   getLeadsByClientId, 
@@ -252,6 +254,31 @@ app.post('/api/auth/login', async (req, res) => {
       if (!clientProfile && user.uid) {
         clientProfile = await getClientByUserId(user.uid);
       }
+      if (!clientProfile) {
+        try {
+          const newClientId = 'client-' + Date.now().toString().slice(-6);
+          clientProfile = await createClient({
+            id: newClientId,
+            userId: user.uid,
+            companyName: user.displayName ? `${user.displayName}'s Organization` : 'Enterprise Client',
+            contactName: user.displayName || cleanEmail.split('@')[0],
+            email: cleanEmail,
+            industry: 'B2B Outbound',
+            status: 'active',
+            twilioPhoneNumber: '+1 (800) 555-VELA',
+            vapiAssistantId: `asst_vapi_${newClientId}`,
+            vapiVoiceId: 'cartesia-sonic-marcus',
+            vapiVoiceName: 'Cartesia Sonic (Warm Authority)',
+            systemPrompt: `You are Vela. Qualify prospects and book calendar meetings.`,
+            firstMessage: `Hi! This is Vela calling. Do you have 60 seconds?`,
+            talktimeMinutesTotal: 5000,
+            talktimeMinutesUsed: 0,
+            activeLines: 5
+          });
+        } catch(e) {
+          console.warn('Auto client create fallback warning:', e);
+        }
+      }
     }
 
     const token = generateToken({
@@ -293,6 +320,31 @@ app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
     let clientProfile = null;
     if (user.role === 'client') {
       clientProfile = await getClientByEmail(user.email) || await getClientByUserId(user.uid);
+      if (!clientProfile) {
+        try {
+          const newClientId = 'client-' + Date.now().toString().slice(-6);
+          clientProfile = await createClient({
+            id: newClientId,
+            userId: user.uid,
+            companyName: user.displayName ? `${user.displayName}'s Organization` : 'Enterprise Client',
+            contactName: user.displayName || user.email.split('@')[0],
+            email: user.email,
+            industry: 'B2B Outbound',
+            status: 'active',
+            twilioPhoneNumber: '+1 (800) 555-VELA',
+            vapiAssistantId: `asst_vapi_${newClientId}`,
+            vapiVoiceId: 'cartesia-sonic-marcus',
+            vapiVoiceName: 'Cartesia Sonic (Warm Authority)',
+            systemPrompt: `You are Vela. Qualify prospects and book calendar meetings.`,
+            firstMessage: `Hi! This is Vela calling. Do you have 60 seconds?`,
+            talktimeMinutesTotal: 5000,
+            talktimeMinutesUsed: 0,
+            activeLines: 5
+          });
+        } catch(e) {
+          console.warn('Auto client create fallback in me route:', e);
+        }
+      }
     }
 
     res.json({
@@ -648,15 +700,19 @@ app.post('/api/admin/create-client', requireAdmin, async (req: AuthRequest, res)
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const tempPassword = temporaryPassword || ('VL-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '!' + Math.floor(10 + Math.random() * 89));
+    const tempPassword = temporaryPassword && temporaryPassword.trim() 
+      ? temporaryPassword.trim() 
+      : ('VL-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '!' + Math.floor(10 + Math.random() * 89));
     const salt = bcrypt.genSaltSync(10);
     const passwordHash = bcrypt.hashSync(tempPassword, salt);
 
-    // 1. Create or get User
+    // 1. Create or update User
     let existingUser = await getUserByEmail(cleanEmail);
     let userId = existingUser ? existingUser.uid : ('usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
 
-    if (!existingUser) {
+    if (existingUser) {
+      await updateUserPassword(existingUser.uid, passwordHash);
+    } else {
       existingUser = await createUser({
         uid: userId,
         email: cleanEmail,
@@ -666,8 +722,9 @@ app.post('/api/admin/create-client', requireAdmin, async (req: AuthRequest, res)
       });
     }
 
-    // 2. Create Client record
-    const clientId = 'client-' + Date.now().toString().slice(-6);
+    // 2. Create or update Client record
+    let existingClient = await getClientByEmail(cleanEmail);
+    const clientId = existingClient?.id || ('client-' + Date.now().toString().slice(-6));
     const clientData = {
       id: clientId,
       userId: existingUser?.uid || userId,
@@ -693,18 +750,23 @@ app.post('/api/admin/create-client', requireAdmin, async (req: AuthRequest, res)
       subscriptionPlan: subscriptionPlan || 'starter'
     };
 
-    const savedClient = await createClient(clientData);
+    let savedClient;
+    if (existingClient) {
+      savedClient = await updateClient(existingClient.id, clientData);
+    } else {
+      savedClient = await createClient(clientData);
+    }
 
     // 3. Admin Notification
     await createAdminNotification({
       id: 'notif-' + Date.now(),
       type: 'signup',
       title: '👑 Client Onboarded by CEO',
-      message: `${savedClient.contactName} from ${savedClient.companyName} (${cleanEmail}) was successfully provisioned!`,
+      message: `${savedClient?.contactName || contactName} from ${savedClient?.companyName || companyName} (${cleanEmail}) was successfully provisioned with password!`,
       read: false
     });
 
-    const welcomeEmailDraft = `Hi ${savedClient.contactName},
+    const welcomeEmailDraft = `Hi ${savedClient?.contactName || contactName},
 
 Welcome to Vela by Lucent AI! Your autonomous outbound voice sales fleet has been provisioned and is ready for live dialing.
 
@@ -716,9 +778,9 @@ Temporary Password: ${tempPassword}
 ---
 
 TELEPHONY ASSIGNMENTS:
-Dedicated Twilio Number: ${savedClient.twilioPhoneNumber}
-Assigned Voice Node: ${savedClient.vapiVoiceName}
-Initial Minutes Pool: ${savedClient.talktimeMinutesTotal.toLocaleString()} mins
+Dedicated Twilio Number: ${savedClient?.twilioPhoneNumber || twilioPhoneNumber}
+Assigned Voice Node: ${savedClient?.vapiVoiceName || vapiVoiceName || 'Cartesia Sonic'}
+Initial Minutes Pool: ${(savedClient?.talktimeMinutesTotal || 5000).toLocaleString()} mins
 
 Please log into your portal to upload your lead list and start your first autonomous dial campaign.
 
@@ -739,6 +801,122 @@ CEO, Lucent AI`;
   } catch (error: any) {
     console.error('Admin create client error:', error);
     res.status(500).json({ error: error.message || 'Failed to onboard client' });
+  }
+});
+
+// Quick Provision & Temporary Password Reset for Existing/New Client (ADMIN ONLY)
+app.post('/api/admin/provision-client', requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const {
+      clientId,
+      email,
+      temporaryPassword,
+      twilioPhoneNumber,
+      vapiAssistantId,
+      companyName,
+      contactName
+    } = req.body;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Client email is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const tempPassword = temporaryPassword && temporaryPassword.trim() 
+      ? temporaryPassword.trim() 
+      : ('VL-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '!' + Math.floor(10 + Math.random() * 89));
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(tempPassword, salt);
+
+    // 1. Create or update User password
+    let existingUser = await getUserByEmail(cleanEmail);
+    let userId = existingUser ? existingUser.uid : ('usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
+
+    if (existingUser) {
+      await updateUserPassword(existingUser.uid, passwordHash);
+    } else {
+      existingUser = await createUser({
+        uid: userId,
+        email: cleanEmail,
+        displayName: contactName || cleanEmail.split('@')[0],
+        passwordHash,
+        role: 'client'
+      });
+    }
+
+    // 2. Update or create client record
+    let client = clientId ? await getClientById(clientId) : await getClientByEmail(cleanEmail);
+    if (client) {
+      client = await updateClient(client.id, {
+        twilioPhoneNumber: twilioPhoneNumber || client.twilioPhoneNumber,
+        vapiAssistantId: vapiAssistantId || client.vapiAssistantId,
+        companyName: companyName || client.companyName,
+        contactName: contactName || client.contactName,
+        status: 'active'
+      });
+    } else {
+      const newClientId = clientId || ('client-' + Date.now().toString().slice(-6));
+      client = await createClient({
+        id: newClientId,
+        userId: existingUser?.uid || userId,
+        companyName: companyName || cleanEmail.split('@')[0],
+        contactName: contactName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        industry: 'B2B Services',
+        status: 'active',
+        twilioPhoneNumber: twilioPhoneNumber || '+1 (800) 555-VELA',
+        vapiAssistantId: vapiAssistantId || `asst_vapi_${newClientId}`,
+        vapiVoiceId: 'cartesia-sonic-marcus',
+        vapiVoiceName: 'Cartesia Sonic (Warm Authority)',
+        talktimeMinutesTotal: 5000,
+        talktimeMinutesUsed: 0,
+        activeLines: 5
+      });
+    }
+
+    // 3. Admin Notification
+    await createAdminNotification({
+      id: 'notif-' + Date.now(),
+      type: 'signup',
+      title: '🔐 Client Provisioned with Password',
+      message: `${client?.contactName || contactName || cleanEmail} (${cleanEmail}) was successfully provisioned with active login credentials.`,
+      read: false
+    });
+
+    const welcomeEmailDraft = `Hi ${client?.contactName || contactName || 'Executive'},
+
+Welcome to Vela by Lucent AI! Your autonomous outbound voice sales agent has been fully provisioned and is ready to start dialing.
+
+Here are your dedicated configuration details:
+Assigned Twilio Number: ${client?.twilioPhoneNumber || twilioPhoneNumber || 'Pending'}
+Vapi Assistant Node: ${client?.vapiAssistantId || vapiAssistantId || 'Auto-Provisioned'}
+
+---
+CLIENT PORTAL ACCESS:
+Login URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login
+Login ID: ${cleanEmail}
+Temporary Password: ${tempPassword}
+---
+
+Please log in to your portal to upload your first lead list and review your AI agent's system prompt.
+
+Best regards,
+Abhishek Das
+CEO, Lucent AI`;
+
+    res.json({
+      success: true,
+      client,
+      credentials: {
+        email: cleanEmail,
+        temporaryPassword: tempPassword,
+        portalUrl: '/login'
+      },
+      welcomeEmailDraft
+    });
+  } catch (error: any) {
+    console.error('Provision client error:', error);
+    res.status(500).json({ error: error.message || 'Failed to provision client' });
   }
 });
 

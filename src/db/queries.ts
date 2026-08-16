@@ -99,6 +99,32 @@ export async function getAllClients() {
   }
 }
 
+export async function updateUserPassword(uid: string, passwordHash: string) {
+  try {
+    const result = await db.update(users)
+      .set({ passwordHash })
+      .where(eq(users.uid, uid))
+      .returning();
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database updateUserPassword failed:", error);
+    throw new Error("Database updateUserPassword failed.", { cause: error });
+  }
+}
+
+export async function updateClient(clientId: string, data: Partial<typeof clients.$inferInsert>) {
+  try {
+    const result = await db.update(clients)
+      .set(data)
+      .where(eq(clients.id, clientId))
+      .returning();
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database update client failed:", error);
+    throw new Error("Database update client failed.", { cause: error });
+  }
+}
+
 export async function createClient(clientData: typeof clients.$inferInsert) {
   try {
     const result = await db.insert(clients).values(clientData).returning();
