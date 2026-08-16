@@ -22,7 +22,6 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { ComingSoonChannels } from './components/ComingSoonChannels';
 import { PortalLoginPage } from './components/PortalLoginPage';
 import { ClientDashboard } from './components/ClientDashboard';
-import { LiveCallTicker } from './components/LiveCallTicker';
 import { MeetingScheduler } from './components/MeetingScheduler';
 import {
   ShieldCheck,
@@ -294,9 +293,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-cyan-100 selection:text-cyan-900">
 
-      {/* Live call activity ticker */}
-      {currentView === 'landing' && <LiveCallTicker />}
-
       {/* Universal Navigation Bar */}
       <Navbar
         currentView={currentView}
@@ -385,7 +381,6 @@ export default function App() {
             <div id="pricing-section">
               <CompetitivePricing
                 onSelectPlan={handleSelectPlan}
-                onSelectMinutePackage={handleSelectMinutePackage}
               />
             </div>
 

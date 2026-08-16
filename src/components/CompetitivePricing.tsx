@@ -1,26 +1,18 @@
 import React from 'react';
 import { 
   Check, 
-  Sparkles, 
-  Zap, 
-  ShieldCheck, 
-  ArrowRight, 
-  Clock, 
-  HelpCircle,
-  CreditCard,
-  Percent
+  Percent,
+  ArrowRight
 } from 'lucide-react';
-import { PRICING_PLANS, MINUTE_PACKAGES } from '../data/initialData';
-import { PricingPlan, MinutePackage } from '../types';
+import { PRICING_PLANS } from '../data/initialData';
+import { PricingPlan } from '../types';
 
 interface CompetitivePricingProps {
   onSelectPlan: (plan: PricingPlan) => void;
-  onSelectMinutePackage: (pkg: MinutePackage) => void;
 }
 
 export const CompetitivePricing: React.FC<CompetitivePricingProps> = ({
   onSelectPlan,
-  onSelectMinutePackage,
 }) => {
   return (
     <section id="pricing-section" className="py-20 bg-slate-950 border-b border-slate-800 relative">
@@ -76,8 +68,7 @@ export const CompetitivePricing: React.FC<CompetitivePricingProps> = ({
                   <div className="mt-1 flex items-center gap-1.5 text-[11px]">
                     <span className="text-slate-500 line-through font-mono">Market: ${plan.competitorPrice}/mo</span>
                     <span className="text-emerald-400 font-semibold font-mono bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/30">
-                      Save 10% ($
-{plan.competitorPrice - plan.monthlyPrice}/mo)
+                      Save 10% (${plan.competitorPrice - plan.monthlyPrice}/mo)
                     </span>
                   </div>
                 </div>
@@ -91,7 +82,7 @@ export const CompetitivePricing: React.FC<CompetitivePricingProps> = ({
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500">
-                    Overage: <strong className="text-slate-300 font-mono">${plan.overageRatePerMinute}/min</strong> (Instant Stripe top-up)
+                    Overage: <strong className="text-slate-300 font-mono">${plan.overageRatePerMinute}/min</strong>
                   </div>
                 </div>
 
@@ -122,90 +113,6 @@ export const CompetitivePricing: React.FC<CompetitivePricingProps> = ({
               </button>
             </div>
           ))}
-        </div>
-
-        {/* Talktime Minute Top-Up Packages */}
-        <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/60 border border-slate-800 space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-            <div>
-              <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold uppercase tracking-wider mb-1">
-                <Zap className="w-4 h-4" />
-                <span>On-Demand Talktime Top-Ups</span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-extrabold text-white">
-                Instant Minute Top-Ups & Credit Allocation
-              </h3>
-              <p className="text-xs text-slate-400">
-                Running a heavy outbound campaign? Top up talk-time anytime with automatic Stripe checkout and guaranteed credit within 15 minutes.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-cyan-500/30 text-xs text-cyan-300 shrink-0">
-              <Clock className="w-4 h-4 text-cyan-400" />
-              <span>15-Minute Guaranteed Credit SLA</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {MINUTE_PACKAGES.map((pkg) => (
-              <div
-                key={pkg.id}
-                className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 hover:border-cyan-500/40 transition flex flex-col justify-between space-y-4"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-white">{pkg.name}</span>
-                    {pkg.badge && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-500/30 font-semibold">
-                        {pkg.badge}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold text-cyan-300 font-mono">
-                      {pkg.minutes.toLocaleString()}
-                    </span>
-                    <span className="text-xs text-slate-400">Voice Minutes</span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                    <span>Total Pack Price:</span>
-                    <span className="font-bold text-white font-mono">${pkg.price} USD</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span>Effective Rate:</span>
-                    <span className="text-emerald-400 font-mono font-semibold">${pkg.pricePerMinute}/min</span>
-                  </div>
-                </div>
-
-                <button
-                  id={`btn-buy-minute-pack-${pkg.id}`}
-                  onClick={() => onSelectMinutePackage(pkg)}
-                  className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 border border-slate-700 hover:border-cyan-400 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Purchase {pkg.minutes.toLocaleString()} Mins</span>
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Security & Telephony Guarantee */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-400">
-          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0" />
-            <span>Enterprise Twilio Virtual DIDs with automated STIR/SHAKEN A-attestation.</span>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 flex items-center gap-3">
-            <Zap className="w-5 h-5 text-emerald-400 shrink-0" />
-            <span>Instant Stripe Checkout with automated webhook synchronization.</span>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 flex items-center gap-3">
-            <Sparkles className="w-5 h-5 text-purple-400 shrink-0" />
-            <span>Zero-risk trial: Test 50 live calls with no obligation.</span>
-          </div>
         </div>
 
       </div>
