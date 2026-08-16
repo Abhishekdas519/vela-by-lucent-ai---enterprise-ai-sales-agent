@@ -169,7 +169,19 @@ export async function createTalktimeRequest(requestData: typeof talktimeRequests
 
 export async function getTalktimeRequests() {
   try {
-    return await db.select().from(talktimeRequests).orderBy(desc(talktimeRequests.createdAt));
+    const orders = await db.select().from(talktimeRequests).orderBy(desc(talktimeRequests.createdAt));
+    const allClients = await db.select().from(clients);
+    const clientMap = new Map(allClients.map(c => [c.id, c]));
+    
+    return orders.map(order => {
+      const client = order.clientId ? clientMap.get(order.clientId) : null;
+      return {
+        ...order,
+        companyName: client?.companyName || 'Enterprise Client',
+        contactName: client?.contactName || 'Executive',
+        email: client?.email || ''
+      };
+    });
   } catch (error) {
     console.error("Database get talktime requests failed:", error);
     throw new Error("Database get talktime requests failed.", { cause: error });

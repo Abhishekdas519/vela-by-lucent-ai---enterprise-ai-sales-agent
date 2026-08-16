@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { 
   X, 
   Zap, 
-  CreditCard, 
   Clock, 
   CheckCircle2, 
   Sparkles, 
   ShieldCheck, 
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  FileCheck,
+  Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ClientProfile, MinutePackage } from '../types';
@@ -27,7 +28,6 @@ export const BuyMinutesModal: React.FC<BuyMinutesModalProps> = ({
   client,
   selectedPresetPackage,
   onClose,
-  onMinutesPurchased,
 }) => {
   const [selectedPkgId, setSelectedPkgId] = useState<string>(
     selectedPresetPackage?.id || MINUTE_PACKAGES[1].id
@@ -36,9 +36,7 @@ export const BuyMinutesModal: React.FC<BuyMinutesModalProps> = ({
   const [isCustom, setIsCustom] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [cardNumber, setCardNumber] = useState('4242 •••• •••• 4242');
-  const [cardExpiry, setCardExpiry] = useState('08/29');
-  const [cardCvc, setCardCvc] = useState('884');
+  const [notes, setNotes] = useState('');
 
   if (!isOpen || !client) return null;
 
@@ -53,93 +51,94 @@ export const BuyMinutesModal: React.FC<BuyMinutesModalProps> = ({
     setIsProcessing(true);
 
     try {
+      const token = localStorage.getItem('vela_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       await fetch('/api/db/talktime-requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           clientId: client.id,
           minutesRequested: activeMinutes,
-          amountDue: activePrice
+          amountDue: activePrice,
+          notes: notes.trim() || undefined
         })
       });
+
+      // Broadcast notification event so admin views update in real time
+      window.dispatchEvent(new Event('lucent_notification_event'));
     } catch (err) {
       console.warn('API sync warning:', err);
     }
 
-    try {
-      const existingNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
-      const newNotif = {
-        id: 'notif-' + Date.now(),
-        type: 'purchase_request',
-        title: '⚡ New Talk-Time Minute Purchase',
-        message: `Client ${client.companyName || client.id} requested ${activeMinutes.toLocaleString()} minutes ($${activePrice}).`,
-        timestamp: new Date().toISOString(),
-        read: false
-      };
-      localStorage.setItem('lucent_admin_notifications', JSON.stringify([newNotif, ...existingNotifs]));
-      window.dispatchEvent(new Event('lucent_notification_event'));
-    } catch (e) {}
-
     setIsProcessing(false);
     setIsSuccess(true);
 
-    // Trigger celebratory confetti
+    // Confetti celebration
     confetti({
-      particleCount: 100,
-      spread: 70,
+      particleCount: 70,
+      spread: 60,
       origin: { y: 0.6 }
     });
-
-    // Show success briefly, don't update minutes directly.
-    setTimeout(() => {
-      setIsSuccess(false);
-      onClose();
-      alert('Purchase order submitted! It will be credited once approved by your administrator.');
-    }, 2500);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-3xl bg-white border border-slate-200 shadow-2xl shadow-cyan-100/60 p-6 sm:p-8 relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-lg rounded-3xl bg-white border border-slate-200 shadow-2xl p-6 sm:p-8 relative overflow-hidden text-slate-900">
         
         {/* Close Button */}
         <button
           id="btn-close-buy-minutes"
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full text-slate-500 hover:text-white hover:bg-slate-100 transition"
+          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
 
         {isSuccess ? (
           <div className="py-8 text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-500/40">
-              <CheckCircle2 className="w-10 h-10 animate-bounce" />
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200 shadow-sm">
+              <CheckCircle2 className="w-9 h-9" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-2xl font-extrabold text-white">Payment Confirmed!</h3>
-              <p className="text-sm text-cyan-700 font-mono">
-                +{activeMinutes.toLocaleString()} minutes added to {client.companyName}
+              <h3 className="text-2xl font-extrabold text-slate-900">Top-Up Request Submitted!</h3>
+              <p className="text-sm text-cyan-700 font-mono font-bold">
+                +{activeMinutes.toLocaleString()} minutes (${activePrice} USD)
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 max-w-sm mx-auto">
-              Live talktime balance refreshed automatically. Instant telephony channel active.
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-600 max-w-sm mx-auto text-left space-y-2">
+              <div className="flex items-center gap-2 font-bold text-slate-800">
+                <FileCheck className="w-4 h-4 text-emerald-600" /> Pending CEO Review
+              </div>
+              <p className="text-slate-500 leading-relaxed">
+                Your order has been routed to <strong>Abhishek Das (CEO, Lucent AI)</strong>. Minutes will be credited to <strong>{client.companyName}</strong> upon invoice confirmation.
+              </p>
             </div>
+            <button
+              onClick={() => {
+                setIsSuccess(false);
+                onClose();
+              }}
+              className="mt-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs transition cursor-pointer"
+            >
+              Done
+            </button>
           </div>
         ) : (
           <div className="space-y-6">
             
             {/* Header */}
             <div className="space-y-1">
-              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-xs font-semibold text-cyan-600">
-                <Zap className="w-3.5 h-3.5" />
-                <span>Instant Talktime Top-Up</span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-xs font-semibold text-cyan-700">
+                <Zap className="w-3.5 h-3.5 text-cyan-600" />
+                <span>Talk-Time Refill Request</span>
               </div>
-              <h3 className="text-2xl font-extrabold text-white">
-                Purchase Voice Calling Minutes
+              <h3 className="text-2xl font-extrabold text-slate-900">
+                Request Calling Minutes
               </h3>
               <p className="text-xs text-slate-500">
-                Account: <strong className="text-slate-700">{client.companyName}</strong> (Current Balance: {(client.talktimeMinutesTotal - client.talktimeMinutesUsed).toLocaleString()} mins)
+                Organization: <strong className="text-slate-700">{client.companyName}</strong> (Current Balance: {(client.talktimeMinutesTotal - client.talktimeMinutesUsed).toLocaleString()} mins)
               </p>
             </div>
 
@@ -154,30 +153,30 @@ export const BuyMinutesModal: React.FC<BuyMinutesModalProps> = ({
                     setSelectedPkgId(pkg.id);
                     setIsCustom(false);
                   }}
-                  className={`p-3 rounded-xl border text-center transition ${
+                  className={`p-3 rounded-2xl border text-center transition cursor-pointer ${
                     !isCustom && selectedPkgId === pkg.id
-                      ? 'bg-cyan-50 border-cyan-500 text-white shadow-md'
-                      : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
+                      ? 'bg-cyan-50/80 border-cyan-400 text-slate-900 shadow-sm ring-1 ring-cyan-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <span className="text-xs font-semibold block text-slate-600">{pkg.name}</span>
                   <span className="text-base font-extrabold text-cyan-700 font-mono block">
                     {pkg.minutes.toLocaleString()}m
                   </span>
-                  <span className="text-[11px] font-bold text-slate-700 block">${pkg.price}</span>
+                  <span className="text-[11px] font-bold text-slate-800 block">${pkg.price}</span>
                 </button>
               ))}
             </div>
 
             {/* Custom slider toggle */}
-            <div className="p-3 rounded-xl bg-slate-50/70 border border-slate-200 space-y-2">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <button
                   type="button"
                   onClick={() => setIsCustom(!isCustom)}
-                  className={`font-semibold text-xs ${isCustom ? 'text-cyan-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  className={`font-semibold text-xs cursor-pointer ${isCustom ? 'text-cyan-700 font-bold' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                  {isCustom ? '✓ Custom Minutes Range' : '+ Need a custom minute amount?'}
+                  {isCustom ? '✓ Custom Minutes Range' : '+ Need a custom minute volume?'}
                 </button>
                 {isCustom && (
                   <span className="font-mono font-bold text-cyan-700">
@@ -194,79 +193,50 @@ export const BuyMinutesModal: React.FC<BuyMinutesModalProps> = ({
                   step="500"
                   value={customMinutes}
                   onChange={(e) => setCustomMinutes(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
                 />
               )}
             </div>
 
-            {/* Checkout Form */}
+            {/* Form Details */}
             <form onSubmit={handleCheckout} className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between text-xs text-slate-500 border-b border-slate-200 pb-2">
-                  <span className="flex items-center gap-1.5">
-                    <CreditCard className="w-3.5 h-3.5 text-cyan-600" />
-                    Stripe Secure Card Payment
-                  </span>
-                  <span className="text-[10px] text-emerald-600 font-semibold font-mono">256-BIT ENCRYPTION</span>
-                </div>
-
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    required
-                    value={cardNumber}
-                    onChange={(e) => setCardNumber(e.target.value)}
-                    placeholder="Card Number"
-                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                  />
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      value={cardExpiry}
-                      onChange={(e) => setCardExpiry(e.target.value)}
-                      placeholder="MM/YY"
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                    />
-                    <input
-                      type="text"
-                      required
-                      value={cardCvc}
-                      onChange={(e) => setCardCvc(e.target.value)}
-                      placeholder="CVC"
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                    />
-                  </div>
-                </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">Purchase Order Notes (Optional)</label>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g., Q3 Outbound Campaign Refill / PO #4892"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
               </div>
 
-              {/* SLA Banner */}
-              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
-                <div className="flex items-center gap-1 text-cyan-700">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Guaranteed Credit in &lt; 15 mins (Live balance updates immediately)</span>
+              {/* SLA Notice */}
+              <div className="flex items-center justify-between text-[11px] text-slate-500 bg-cyan-50/50 p-2.5 rounded-xl border border-cyan-100">
+                <div className="flex items-center gap-1.5 text-cyan-800">
+                  <Clock className="w-3.5 h-3.5 text-cyan-600 flex-shrink-0" />
+                  <span>Reviewed & credited directly by CEO within 24 hours</span>
                 </div>
               </div>
 
               {/* Total and Submit */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200">
                 <div>
-                  <span className="text-[10px] uppercase font-semibold text-slate-500 block">Total Due</span>
-                  <span className="text-2xl font-extrabold text-white font-mono">${activePrice} USD</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Amount Due</span>
+                  <span className="text-2xl font-extrabold text-slate-900 font-mono">${activePrice} USD</span>
                 </div>
 
                 <button
                   type="submit"
-                  id="btn-confirm-stripe-purchase"
+                  id="btn-confirm-talktime-purchase"
                   disabled={isProcessing}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 via-cyan-500 to-indigo-600 hover:from-emerald-400 hover:to-indigo-500 text-slate-950 font-extrabold text-xs shadow-lg shadow-cyan-500/20 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  className="px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {isProcessing ? (
-                    <span>Processing with Stripe...</span>
+                    <span>Submitting Order...</span>
                   ) : (
                     <>
-                      <span>Authorize & Credit {activeMinutes.toLocaleString()} Mins</span>
+                      <span>Submit Topup Request ({activeMinutes.toLocaleString()} Mins)</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}

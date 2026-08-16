@@ -126,6 +126,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, [activeTab]);
 
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setActionMessage(msg);
+    setTimeout(() => setActionMessage(null), 4000);
+  };
+
   const handleApproveOrder = async (orderId: string, clientId: string, minutes: number) => {
     try {
       const res = await authFetch(`/api/db/talktime-requests/${orderId}/approve`, {
@@ -134,7 +141,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       const result = await res.json();
       if (result.success) {
-        authFetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'approved' } : o));
         const clientToUpdate = clients.find(c => c.id === clientId);
         if (clientToUpdate) {
           onUpdateClient({
@@ -142,22 +149,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             talktimeMinutesTotal: clientToUpdate.talktimeMinutesTotal + minutes
           });
         }
-        alert(`✅ Order approved! ${minutes.toLocaleString()} minutes credited.`);
+        showToast(`✅ Order ${orderId} approved! +${minutes.toLocaleString()} minutes credited.`);
       } else {
-        alert('Failed to approve order: ' + (result.error || 'Unknown error'));
+        showToast('❌ Failed to approve order: ' + (result.error || 'Unknown error'));
       }
     } catch (e: any) {
-      alert('Failed to approve order: ' + e.message);
+      showToast('❌ Error approving order: ' + e.message);
     }
   };
 
   const handleRejectOrder = async (orderId: string) => {
     try {
       await authFetch(`/api/db/talktime-requests/${orderId}/reject`, { method: 'POST' });
-      authFetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
-      alert('Order rejected.');
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'rejected' } : o));
+      showToast('⚠️ Order rejected.');
     } catch (e: any) {
-      alert('Error rejecting order: ' + e.message);
+      showToast('❌ Error rejecting order: ' + e.message);
     }
   };
 
@@ -178,7 +185,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const password = generatePassword();
     const loginId = onboardClient.email;
     
-    // In a real app, we would save the new Twilio and Vapi IDs to the DB here
     onUpdateClient({
       ...onboardClient,
       twilioPhoneNumber: twilioNumber,
@@ -200,7 +206,7 @@ Vapi Assistant Node: ${vapiId || 'Auto-Provisioned'}
 
 ---
 CLIENT PORTAL ACCESS:
-URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login
+Login URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login
 Login ID: ${loginId}
 Temporary Password: ${password}
 ---
@@ -208,11 +214,10 @@ Temporary Password: ${password}
 Please log in to your portal to upload your first lead list and review your AI agent's system prompt.
 
 Best regards,
-The Lucent AI Team
-CEO`);
+Abhishek Das
+CEO, Lucent AI`);
 
-    // The user requested the email specifically come to abhishekdas2090@gmail.com for testing
-    window.location.href = `mailto:abhishekdas2090@gmail.com?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:${onboardClient.email}?subject=${subject}&body=${body}`;
   };
 
   const handleUpdateMeetingStatus = async (meetingId: string, status: string) => {
@@ -757,44 +762,82 @@ CEO`);
 
         {activeTab === 'orders' && (
           <div className="rounded-3xl bg-white border border-slate-200 shadow-xl overflow-hidden space-y-4 p-6">
-            <h2 className="text-lg font-bold text-slate-900">Talktime Purchase Orders</h2>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Talktime Minute Purchase Orders</h2>
+                <p className="text-xs text-slate-500">Client top-up requests waiting for invoice verification and CEO minute allocation.</p>
+              </div>
+              <div className="text-xs font-mono font-bold text-slate-500">
+                {orders.filter(o => o.status === 'pending').length} Pending Orders
+              </div>
+            </div>
+
+            {actionMessage && (
+              <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-xl text-xs font-bold text-cyan-800 animate-in fade-in">
+                {actionMessage}
+              </div>
+            )}
+
             <div className="overflow-x-auto rounded-2xl border border-slate-200">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                   <tr>
-                    <th className="p-3.5 font-bold">Client ID</th>
+                    <th className="p-3.5 font-bold">Client / Company</th>
                     <th className="p-3.5 font-bold">Minutes Requested</th>
                     <th className="p-3.5 font-bold">Amount Due</th>
+                    <th className="p-3.5 font-bold">Order Details</th>
                     <th className="p-3.5 font-bold">Status</th>
-                    <th className="p-3.5 font-bold text-right">Actions</th>
+                    <th className="p-3.5 font-bold text-right">CEO Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {orders.map(order => (
                     <tr key={order.id} className="hover:bg-slate-50/60 transition group">
-                      <td className="p-3.5 text-slate-600 font-mono">{order.clientId}</td>
-                      <td className="p-3.5 text-cyan-600 font-bold font-mono">+{order.minutesRequested.toLocaleString()}m</td>
-                      <td className="p-3.5 text-emerald-600 font-mono">${order.amountDue}</td>
                       <td className="p-3.5">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          order.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                          order.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                        <div className="font-bold text-slate-900">{order.companyName || 'Enterprise Account'}</div>
+                        <div className="text-slate-500 text-[11px] font-mono">{order.email || order.clientId}</div>
+                      </td>
+                      <td className="p-3.5 text-cyan-700 font-bold font-mono text-sm">
+                        +{order.minutesRequested?.toLocaleString()}m
+                      </td>
+                      <td className="p-3.5 text-emerald-700 font-bold font-mono text-sm">
+                        ${order.amountDue} USD
+                      </td>
+                      <td className="p-3.5 text-slate-500 text-[11px]">
+                        {order.notes ? <span className="italic">"{order.notes}"</span> : <span className="text-slate-400">Standard Topup</span>}
+                      </td>
+                      <td className="p-3.5">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          order.status === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                          order.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
                         }`}>
-                          {order.status.toUpperCase()}
+                          {order.status === 'pending' ? '⏳ PENDING CEO REVIEW' : order.status.toUpperCase()}
                         </span>
                       </td>
                       <td className="p-3.5 text-right space-x-2">
-                        {order.status === 'pending' && (
+                        {order.status === 'pending' ? (
                           <>
-                            <button onClick={() => handleApproveOrder(order.id, order.clientId, order.minutesRequested)} className="px-2 py-1 bg-emerald-600 text-white rounded text-xs font-bold hover:bg-emerald-500">Approve</button>
-                            <button onClick={() => handleRejectOrder(order.id)} className="px-2 py-1 bg-slate-200 text-rose-600 rounded text-xs font-bold hover:bg-slate-300">Reject</button>
+                            <button
+                              onClick={() => handleApproveOrder(order.id, order.clientId, order.minutesRequested)}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition shadow-sm cursor-pointer"
+                            >
+                              Approve & Credit
+                            </button>
+                            <button
+                              onClick={() => handleRejectOrder(order.id)}
+                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-rose-600 rounded-lg text-xs font-bold transition cursor-pointer"
+                            >
+                              Reject
+                            </button>
                           </>
+                        ) : (
+                          <span className="text-slate-400 text-[11px] font-mono">Completed</span>
                         )}
                       </td>
                     </tr>
                   ))}
                   {orders.length === 0 && (
-                    <tr><td colSpan={5} className="p-6 text-center text-slate-500 font-mono">No purchase orders</td></tr>
+                    <tr><td colSpan={6} className="p-8 text-center text-slate-500 font-mono">No purchase orders placed yet.</td></tr>
                   )}
                 </tbody>
               </table>

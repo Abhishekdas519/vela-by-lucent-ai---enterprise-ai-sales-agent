@@ -620,6 +620,128 @@ app.post('/api/db/clients', requireAdmin, async (req: AuthRequest, res) => {
   }
 });
 
+// Full Admin Client Onboarding with Credentials & Telephony Provisioning (ADMIN ONLY)
+app.post('/api/admin/create-client', requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const {
+      email,
+      temporaryPassword,
+      companyName,
+      contactName,
+      industry,
+      twilioPhoneNumber,
+      vapiAssistantId,
+      vapiVoiceId,
+      vapiVoiceName,
+      talktimeMinutesTotal,
+      activeLines,
+      subscriptionPlan,
+      systemPrompt,
+      firstMessage
+    } = req.body;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Client email is required' });
+    }
+    if (!companyName || !companyName.trim()) {
+      return res.status(400).json({ error: 'Company name is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const tempPassword = temporaryPassword || ('VL-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '!' + Math.floor(10 + Math.random() * 89));
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(tempPassword, salt);
+
+    // 1. Create or get User
+    let existingUser = await getUserByEmail(cleanEmail);
+    let userId = existingUser ? existingUser.uid : ('usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
+
+    if (!existingUser) {
+      existingUser = await createUser({
+        uid: userId,
+        email: cleanEmail,
+        displayName: contactName || cleanEmail.split('@')[0],
+        passwordHash,
+        role: 'client'
+      });
+    }
+
+    // 2. Create Client record
+    const clientId = 'client-' + Date.now().toString().slice(-6);
+    const clientData = {
+      id: clientId,
+      userId: existingUser?.uid || userId,
+      companyName,
+      contactName: contactName || cleanEmail.split('@')[0],
+      email: cleanEmail,
+      industry: industry || 'B2B Services',
+      status: 'active',
+      vapiAssistantId: vapiAssistantId || `asst_vapi_${clientId}`,
+      vapiVoiceId: vapiVoiceId || 'cartesia-sonic-marcus',
+      vapiVoiceName: vapiVoiceName || 'Cartesia Sonic (Warm Authority)',
+      twilioPhoneNumber: twilioPhoneNumber || '+1 (800) 555-VELA',
+      systemPrompt: systemPrompt || `You are Vela representing ${companyName}. Qualify prospects and book calendar meetings.`,
+      firstMessage: firstMessage || `Hi! This is Vela calling on behalf of ${companyName}. Do you have 60 seconds?`,
+      talktimeMinutesTotal: Number(talktimeMinutesTotal) || 5000,
+      talktimeMinutesUsed: 0,
+      activeLines: Number(activeLines) || 5,
+      callingHoursStart: '09:00',
+      callingHoursEnd: '18:00',
+      timezone: 'America/New_York (EST)',
+      autoFollowupEnabled: true,
+      followupDelayHours: 12,
+      subscriptionPlan: subscriptionPlan || 'starter'
+    };
+
+    const savedClient = await createClient(clientData);
+
+    // 3. Admin Notification
+    await createAdminNotification({
+      id: 'notif-' + Date.now(),
+      type: 'signup',
+      title: '👑 Client Onboarded by CEO',
+      message: `${savedClient.contactName} from ${savedClient.companyName} (${cleanEmail}) was successfully provisioned!`,
+      read: false
+    });
+
+    const welcomeEmailDraft = `Hi ${savedClient.contactName},
+
+Welcome to Vela by Lucent AI! Your autonomous outbound voice sales fleet has been provisioned and is ready for live dialing.
+
+---
+CLIENT PORTAL ACCESS:
+Login URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login
+Login ID: ${cleanEmail}
+Temporary Password: ${tempPassword}
+---
+
+TELEPHONY ASSIGNMENTS:
+Dedicated Twilio Number: ${savedClient.twilioPhoneNumber}
+Assigned Voice Node: ${savedClient.vapiVoiceName}
+Initial Minutes Pool: ${savedClient.talktimeMinutesTotal.toLocaleString()} mins
+
+Please log into your portal to upload your lead list and start your first autonomous dial campaign.
+
+Best regards,
+Abhishek Das
+CEO, Lucent AI`;
+
+    res.json({
+      success: true,
+      client: savedClient,
+      credentials: {
+        email: cleanEmail,
+        temporaryPassword: tempPassword,
+        portalUrl: '/login'
+      },
+      welcomeEmailDraft
+    });
+  } catch (error: any) {
+    console.error('Admin create client error:', error);
+    res.status(500).json({ error: error.message || 'Failed to onboard client' });
+  }
+});
+
 // Admin Notifications Store (ADMIN ONLY)
 app.get('/api/admin/notifications', requireAdmin, async (req: AuthRequest, res) => {
   try {

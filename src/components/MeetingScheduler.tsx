@@ -258,26 +258,29 @@ export const MeetingScheduler: React.FC<MeetingSchedulerProps> = ({ onClose, isM
         {/* Step 3: Confirmation */}
         {step === 3 && (
           <div className="p-8 text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 className="w-9 h-9 text-emerald-600" />
             </div>
             <div>
-              <h4 className="text-xl font-extrabold text-slate-900">You're Confirmed!</h4>
-              <p className="text-sm text-slate-500 mt-1">
-                Thanks, <span className="font-semibold text-slate-700">{contactName}</span>. Our team will send a calendar invite to <span className="text-cyan-600">{email}</span> within 15 minutes.
+              <h4 className="text-2xl font-extrabold text-slate-900">Strategy Session Requested!</h4>
+              <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto leading-relaxed">
+                Thank you, <span className="font-bold text-slate-800">{contactName}</span> from <span className="font-bold text-slate-800">{companyName}</span>. <strong className="text-slate-900">Abhishek Das (CEO, Lucent AI)</strong> and the executive architecture team will confirm your session and email the calendar invite to <span className="text-cyan-700 font-mono font-bold">{email}</span>.
               </p>
               {selectedDay && selectedSlot && (
-                <div className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-50 border border-cyan-200 text-sm font-semibold text-cyan-700">
-                  <Calendar className="w-4 h-4" /> {selectedDay} · {selectedSlot}
+                <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-50 border border-cyan-200 text-sm font-semibold text-cyan-800">
+                  <Calendar className="w-4 h-4 text-cyan-600" /> Requested Time: {selectedDay} · {selectedSlot}
                 </div>
               )}
             </div>
-            <p className="text-xs text-slate-400">
-              In the meantime, explore Vela's capabilities using the interactive demo on this page.
-            </p>
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 max-w-sm mx-auto">
+              Need immediate assistance? Reach our master desk directly at <span className="font-mono text-slate-700 font-bold">abhishekdas2090@gmail.com</span>
+            </div>
             {onClose && (
-              <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-800 transition">
-                Close
+              <button 
+                onClick={onClose} 
+                className="mt-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Done
               </button>
             )}
           </div>

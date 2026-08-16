@@ -97,22 +97,22 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-3 pt-1">
               <button
-                id="btn-hero-try-demo"
-                onClick={onTryDemo}
-                className="group flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-cyan-500/20 hover:from-cyan-400 hover:to-indigo-500 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer"
+                id="btn-hero-book-strategy"
+                onClick={onOpenScheduler}
+                className="group flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm shadow-lg shadow-cyan-600/20 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer"
               >
-                <Play className="w-4 h-4 text-cyan-50 group-hover:scale-110 transition-transform" />
-                Try Live Voice Demo
-                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-mono">Free</span>
+                <Calendar className="w-4 h-4 text-cyan-100 group-hover:scale-110 transition-transform" />
+                <span>Book Your Strategy Call</span>
+                <ArrowRight className="w-4 h-4 text-cyan-200" />
               </button>
 
               <button
-                id="btn-hero-book-demo"
-                onClick={onOpenScheduler}
+                id="btn-hero-portal-login"
+                onClick={onOpenSignUp}
                 className="flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-800 font-bold text-sm shadow-sm transition-all hover:-translate-y-0.5 cursor-pointer"
               >
-                <Calendar className="w-4 h-4 text-cyan-600" />
-                Book a Live Demo
+                <Bot className="w-4 h-4 text-cyan-600" />
+                Client Portal Login
               </button>
             </div>
 

@@ -13,7 +13,7 @@ import {
 } from './types';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
-import { LiveVoiceDemo } from './components/LiveVoiceDemo';
+import { SecuritySection } from './components/SecuritySection';
 import { ProofOfResults } from './components/ProofOfResults';
 import { CompetitivePricing } from './components/CompetitivePricing';
 import { AuthModal } from './components/AuthModal';
@@ -195,17 +195,21 @@ export default function App() {
   };
 
   const handleSelectPlan = (plan: PricingPlan) => {
-    if (!currentUser) {
-      setAuthMode('signup');
-      setIsAuthModalOpen(true);
+    const el = document.getElementById('scheduler-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
     } else {
-      setIsBuyMinutesOpen(true);
+      setIsSchedulerOpen(true);
     }
   };
 
   const handleSelectMinutePackage = (pkg: MinutePackage) => {
-    setSelectedMinutePackage(pkg);
-    setIsBuyMinutesOpen(true);
+    if (!currentUser) {
+      onOpenScheduler();
+    } else {
+      setSelectedMinutePackage(pkg);
+      setIsBuyMinutesOpen(true);
+    }
   };
 
   const handleMinutesPurchased = (addedMinutes: number) => {
@@ -237,10 +241,12 @@ export default function App() {
     setIsBuyMinutesOpen(true);
   };
 
-  const scrollToDemo = () => {
-    const element = document.getElementById('voice-demo-section');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+  const onOpenScheduler = () => {
+    const el = document.getElementById('scheduler-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      setIsSchedulerOpen(true);
     }
   };
 
@@ -249,7 +255,7 @@ export default function App() {
       step: '01',
       icon: UploadCloud,
       title: 'Upload Your Lead CSV',
-      desc: 'Drag & drop any CSV file with contacts. Vela maps name, phone, company, and title automatically in seconds.',
+      desc: 'Drag & drop any CSV file with business contacts. Vela maps name, phone, company, and title automatically in seconds.',
       color: 'text-cyan-600',
       bg: 'bg-cyan-50',
       border: 'border-cyan-200',
@@ -258,7 +264,7 @@ export default function App() {
       step: '02',
       icon: Phone,
       title: 'Vela Dials Autonomously',
-      desc: 'Your AI agent calls every lead in your list with sub-450ms latency. Real objections, real conversation, no scripts.',
+      desc: 'Your AI agent calls every lead in your list with sub-450ms voice latency. Real objections, natural conversation, no scripts.',
       color: 'text-indigo-600',
       bg: 'bg-indigo-50',
       border: 'border-indigo-200',
@@ -267,7 +273,7 @@ export default function App() {
       step: '03',
       icon: Calendar,
       title: 'Meetings Get Booked',
-      desc: 'High-intent leads get auto-qualified and meeting requests land in your calendar. Vela sends 12-hour follow-ups.',
+      desc: 'High-intent leads get auto-qualified and meeting requests land in your calendar. Vela drafts and sends 12-hour follow-ups.',
       color: 'text-emerald-600',
       bg: 'bg-emerald-50',
       border: 'border-emerald-200',
@@ -322,32 +328,32 @@ export default function App() {
           <div className="space-y-0">
             {/* Premium Hero */}
             <HeroSection
-              onTryDemo={scrollToDemo}
+              onTryDemo={onOpenScheduler}
               onOpenSignUp={() => {
-                setAuthMode('signup');
-                setIsAuthModalOpen(true);
+                window.history.pushState({}, '', '/login');
+                setCurrentView('portal_login');
               }}
-              onOpenScheduler={() => setIsSchedulerOpen(true)}
+              onOpenScheduler={onOpenScheduler}
             />
 
             {/* How It Works */}
             <section className="py-20 bg-white border-b border-slate-200">
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-14">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-xs font-semibold text-indigo-700 mb-4">
-                    <Zap className="w-3.5 h-3.5 text-indigo-600" /> Operational Workflow
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-xs font-semibold text-cyan-700 mb-4">
+                    <Zap className="w-3.5 h-3.5 text-cyan-600" /> Operational Workflow
                   </div>
                   <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
                     From Lead List to Booked Meeting in Minutes
                   </h2>
-                  <p className="mt-3 text-slate-600 text-base max-w-2xl mx-auto">
-                    No complex setup. Upload your contact list, configure your offer once, and let Vela dial and qualify 24/7.
+                  <p className="mt-3 text-slate-600 text-base max-w-2xl mx-auto leading-relaxed">
+                    No complex setup. Upload your contact CSV, configure your offer once, and let Vela dial, qualify, and follow up autonomously.
                   </p>
                 </div>
 
                 <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
                   {HOW_IT_WORKS.map((item, i) => (
-                    <div key={i} className={`relative rounded-2xl border ${item.border} ${item.bg} p-6 hover:shadow-lg transition-shadow`}>
+                    <div key={i} className={`relative rounded-3xl border ${item.border} ${item.bg} p-6 hover:shadow-lg transition-shadow`}>
                       <div className="flex items-start gap-4">
                         <div className={`w-11 h-11 rounded-xl bg-white border ${item.border} flex items-center justify-center flex-shrink-0 shadow-sm`}>
                           <item.icon className={`w-5 h-5 ${item.color}`} />
@@ -362,58 +368,67 @@ export default function App() {
               </div>
             </section>
 
-            {/* Coming Soon Channels */}
+            {/* Multi-Channel Outreach */}
             <ComingSoonChannels />
 
-            {/* Interactive Live Voice Demo */}
-            <LiveVoiceDemo
-              onOpenSignUp={() => {
-                setAuthMode('signup');
-                setIsAuthModalOpen(true);
-              }}
-            />
-
-            {/* Proof of Results & ROI Calculator */}
+            {/* Proof of Results & ROI Benchmarks */}
             <ProofOfResults
-              onOpenSignUp={() => {
-                setAuthMode('signup');
-                setIsAuthModalOpen(true);
-              }}
+              onOpenSignUp={onOpenScheduler}
             />
 
-            {/* Pricing */}
-            <CompetitivePricing
-              onSelectPlan={handleSelectPlan}
-              onSelectMinutePackage={handleSelectMinutePackage}
-            />
+            {/* Enterprise Security Section */}
+            <div id="security-section">
+              <SecuritySection />
+            </div>
 
-            {/* Final CTA Section */}
-            <section className="py-20 bg-slate-900 text-white border-t border-slate-800">
-              <div className="max-w-3xl mx-auto px-4 text-center space-y-6">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-xs font-semibold text-cyan-300">
-                  <Activity className="w-3.5 h-3.5 animate-pulse" /> Enterprise-Grade Voice AI
+            {/* Pricing Matrix */}
+            <div id="pricing-section">
+              <CompetitivePricing
+                onSelectPlan={handleSelectPlan}
+                onSelectMinutePackage={handleSelectMinutePackage}
+              />
+            </div>
+
+            {/* Embedded Strategy Session Booking Section */}
+            <section id="scheduler-section" className="py-24 bg-slate-900 text-white border-t border-slate-800 relative overflow-hidden">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div className="grid lg:grid-cols-12 gap-12 items-center">
+                  
+                  {/* Left Column: Value Pitch */}
+                  <div className="lg:col-span-5 space-y-6">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-xs font-bold text-cyan-300">
+                      <Calendar className="w-3.5 h-3.5 text-cyan-400" /> Executive Consultation
+                    </div>
+                    
+                    <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
+                      Deploy Your Autonomous Sales Fleet with Our Team
+                    </h2>
+                    
+                    <p className="text-slate-300 text-base leading-relaxed">
+                      Schedule a 30-minute architecture session with <strong>Abhishek Das (CEO, Lucent AI)</strong>. We will review your target market, configure your custom voice persona, and set up your telephony lines.
+                    </p>
+
+                    <div className="space-y-3 pt-2">
+                      {[
+                        'Custom objection handling model tailored to your industry',
+                        'Dedicated Twilio SIP virtual number provisioning',
+                        'Live CSV list upload and CRM webhook walkthrough',
+                        'Guaranteed 10% lower cost than manual BPO call centers'
+                      ].map((benefit, idx) => (
+                        <div key={idx} className="flex items-start gap-2.5 text-sm text-slate-300 font-medium">
+                          <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                          <span>{benefit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Embedded Scheduler Widget */}
+                  <div className="lg:col-span-7">
+                    <MeetingScheduler isModal={false} />
+                  </div>
+
                 </div>
-                <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-                  Ready to Deploy Your Autonomous Sales Fleet?
-                </h2>
-                <p className="text-slate-400 text-base">
-                  Join hundreds of revenue teams replacing manual outbound with autonomous AI agents.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-                  <button
-                    onClick={() => { setAuthMode('signup'); setIsAuthModalOpen(true); }}
-                    className="px-8 py-3.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition shadow-lg shadow-cyan-600/30 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    Start Free Trial <ArrowRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setIsSchedulerOpen(true)}
-                    className="px-8 py-3.5 rounded-xl border border-slate-700 text-slate-300 font-semibold hover:border-slate-500 hover:text-white transition flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Calendar className="w-4 h-4 text-cyan-400" /> Book a Strategy Session
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 pt-1">Setup in 3 minutes · Live PostgreSQL persistence · Full CRM sync</p>
               </div>
             </section>
           </div>
@@ -482,8 +497,8 @@ export default function App() {
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product</h4>
                 <ul className="space-y-2">
-                  {['Features', 'Pricing', 'Integrations', 'API Reference', 'Changelog'].map(l => (
-                    <li key={l}><button onClick={scrollToDemo} className="text-sm text-slate-400 hover:text-white transition">{l}</button></li>
+                  {['Features', 'Pricing', 'Security', 'Integrations', 'Changelog'].map(l => (
+                    <li key={l}><button onClick={onOpenScheduler} className="text-sm text-slate-400 hover:text-white transition">{l}</button></li>
                   ))}
                 </ul>
               </div>
@@ -492,8 +507,8 @@ export default function App() {
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Company</h4>
                 <ul className="space-y-2">
-                  {['About Lucent AI', 'Blog', 'Careers', 'Press Kit', 'Contact'].map(l => (
-                    <li key={l}><button className="text-sm text-slate-400 hover:text-white transition">{l}</button></li>
+                  {['About Lucent AI', 'Case Studies', 'Executive Team', 'Contact'].map(l => (
+                    <li key={l}><button onClick={onOpenScheduler} className="text-sm text-slate-400 hover:text-white transition">{l}</button></li>
                   ))}
                 </ul>
               </div>
@@ -502,8 +517,8 @@ export default function App() {
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Legal</h4>
                 <ul className="space-y-2">
-                  {['Privacy Policy', 'Terms of Service', 'GDPR Compliance', 'CCPA', 'Data Processing'].map(l => (
-                    <li key={l}><button className="text-sm text-slate-400 hover:text-white transition">{l}</button></li>
+                  {['Privacy Policy', 'Terms of Service', 'GDPR Compliance', 'TCPA Safeguards'].map(l => (
+                    <li key={l}><button onClick={onOpenScheduler} className="text-sm text-slate-400 hover:text-white transition">{l}</button></li>
                   ))}
                 </ul>
               </div>
@@ -514,7 +529,7 @@ export default function App() {
               <div className="flex flex-wrap items-center gap-3">
                 {[
                   { Icon: ShieldCheck, label: 'Twilio SIP Attestation A', color: 'text-cyan-400' },
-                  { Icon: Zap, label: 'Vapi Real-Time Voice', color: 'text-emerald-400' },
+                  { Icon: Zap, label: 'Cartesia Ultra-Low Latency', color: 'text-emerald-400' },
                   { Icon: Sparkles, label: 'Gemini Intelligence', color: 'text-indigo-400' },
                   { Icon: Lock, label: 'SOC 2 Type II Ready', color: 'text-amber-400' },
                 ].map(({ Icon, label, color }) => (
@@ -542,7 +557,7 @@ export default function App() {
         onSignUpSuccess={handleSignUpSuccess}
       />
 
-      {/* Buy Minutes & Stripe Checkout Modal */}
+      {/* Buy Minutes Modal */}
       <BuyMinutesModal
         isOpen={isBuyMinutesOpen}
         client={activeClient}
