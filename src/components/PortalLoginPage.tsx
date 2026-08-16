@@ -2,17 +2,17 @@ import React, { useState } from 'react';
 import { 
   Sparkles, 
   Shield, 
-  Building2, 
   Mail, 
   Lock, 
   ArrowRight,
   Zap,
-  Bot
+  Bot,
+  AlertCircle
 } from 'lucide-react';
 import { User, ClientProfile } from '../types';
 
 interface PortalLoginPageProps {
-  onLoginSuccess: (user: User) => void;
+  onLoginSuccess: (user: User, client?: ClientProfile) => void;
   onNavigateHome: () => void;
 }
 
@@ -40,22 +40,16 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Authentication failed');
+        throw new Error(data.error || 'Authentication failed. Please check your credentials.');
       }
 
-      onLoginSuccess(data.user);
+      if (data.token) {
+        localStorage.setItem('vela_token', data.token);
+      }
+
+      onLoginSuccess(data.user, data.client);
     } catch (err: any) {
-      console.warn('Backend login fallback:', err);
-      const isAdmin = loginEmail.toLowerCase().startsWith('admin@');
-      const clientUser: User = {
-        id: isAdmin ? `user-admin-1` : `user-client-1`,
-        name: isAdmin ? 'Admin' : loginEmail.split('@')[0],
-        email: loginEmail,
-        role: isAdmin ? 'admin' : 'client',
-        companyName: isAdmin ? 'Lucent AI Master Suite' : 'Client Organization',
-        clientId: isAdmin ? undefined : 'client-1'
-      };
-      onLoginSuccess(clientUser);
+      setAuthError(err.message || 'Login failed. Please verify your email and password.');
     } finally {
       setIsSubmitting(false);
     }
@@ -88,7 +82,7 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
             
             <h2 className="text-3xl font-bold mb-4 leading-tight">Welcome to your Autonomous Fleet.</h2>
             <p className="text-slate-400 text-sm leading-relaxed mb-8">
-              Access your real-time analytics, provision new AI voice agents, and monitor your outbound lead generation campaigns.
+              Access real-time telemetry, configure custom voice agents, and monitor live B2B outbound dialing pipelines.
             </p>
           </div>
 
@@ -115,12 +109,19 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
           <div className="w-full max-w-sm">
             <div className="text-center mb-8">
               <h3 className="text-2xl font-bold text-slate-900 mb-2">Sign in to Client Portal</h3>
-              <p className="text-slate-500 text-sm">Use your organization email to continue</p>
+              <p className="text-slate-500 text-sm">Use your verified credentials to access your fleet</p>
             </div>
+
+            {authError && (
+              <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                <div className="font-medium">{authError}</div>
+              </div>
+            )}
 
             <form onSubmit={handleLoginSubmit} className="space-y-5">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Work Email</label>
+                <label className="text-sm font-medium text-slate-700">Account Email</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                     <Mail className="h-4 w-4 text-slate-400" />
@@ -138,7 +139,6 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium text-slate-700">Password</label>
-                  <a href="#" className="text-xs font-medium text-cyan-600 hover:text-cyan-700">Forgot?</a>
                 </div>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
@@ -155,20 +155,30 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
                 </div>
               </div>
 
-              <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100 flex items-start gap-2 mt-4">
-                <Shield className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                <p className="text-[11px] leading-relaxed text-blue-700">
-                  <strong>Secure Portal:</strong><br />
-                  All connections are end-to-end encrypted.
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex items-start gap-2 mt-4">
+                <Shield className="w-4 h-4 text-cyan-600 mt-0.5 shrink-0" />
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  <strong>Secure Authorization:</strong><br />
+                  Sessions are cryptographically verified with JWT tokens and live PostgreSQL persistence.
                 </p>
               </div>
 
               <button
                 type="submit"
-                className="w-full mt-6 bg-slate-900 text-white rounded-xl py-3 px-4 font-semibold text-sm hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                disabled={isSubmitting}
+                className="w-full mt-6 bg-slate-900 text-white rounded-xl py-3 px-4 font-semibold text-sm hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                Sign In to Dashboard
-                <ArrowRight className="w-4 h-4" />
+                {isSubmitting ? (
+                  <span className="inline-flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Authenticating...
+                  </span>
+                ) : (
+                  <>
+                    Sign In to Dashboard
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           </div>

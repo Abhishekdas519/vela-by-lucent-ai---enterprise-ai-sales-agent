@@ -1,16 +1,20 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import pg from 'pg';
 import * as schema from './schema.js';
 
+const { Pool } = pg;
+
 declare global {
-  var _postgresPool: Pool | undefined;
+  var _postgresPool: pg.Pool | undefined;
   var _drizzleDb: any | undefined;
 }
 
 export const createPool = () => {
-  if (!global._postgresPool && process.env.DATABASE_URL) {
+  const connectionString = process.env.DATABASE_URL;
+  if (!global._postgresPool && connectionString) {
     global._postgresPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
+      ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: false },
       max: 10,
       connectionTimeoutMillis: 15000,
     });

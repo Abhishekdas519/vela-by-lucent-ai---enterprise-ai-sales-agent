@@ -2,17 +2,26 @@ import express from 'express';
 import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
 const app = express();
 
-// Enable CORS for cross-origin requests from Vercel
-app.use(cors());
+// Enable CORS for cross-origin requests from Vercel / clients
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 app.use(express.json());
 
-import { requireAuth, AuthRequest } from '../src/middleware/auth.js';
+import { requireAuth, requireAdmin, generateToken, AuthRequest } from '../src/middleware/auth.js';
 import { 
   getOrCreateUser, 
   getUserByEmail, 
+  getUserById,
   createUser, 
   getAllClients, 
   createClient, 
@@ -30,10 +39,15 @@ import {
   getClientLogs, 
   createMeeting, 
   getMeetings, 
-  updateMeetingStatus 
+  updateMeetingStatus,
+  createAdminNotification,
+  getAdminNotifications,
+  markAdminNotificationRead
 } from '../src/db/queries.js';
 
-let adminNotifications: any[] = [];
+// ============================================================================
+// 1. AUTHENTICATION & ONBOARDING
+// ============================================================================
 
 // Real User Registration & Client Onboarding API
 app.post('/api/auth/signup', async (req, res) => {
@@ -53,19 +67,23 @@ app.post('/api/auth/signup', async (req, res) => {
       return res.status(400).json({ error: 'Valid email address is required' });
     }
 
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
     const cleanEmail = email.toLowerCase().trim();
-    const isAdmin = cleanEmail.startsWith('admin@');
-    const role = isAdmin ? 'admin' : 'client';
+    const isAdmin = cleanEmail.startsWith('admin@') || cleanEmail === 'abhishekdas2090@gmail.com';
+    const role: 'admin' | 'client' = isAdmin ? 'admin' : 'client';
     const userId = 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
 
     // Check if user already exists
-    let existingUser = await getUserByEmail(cleanEmail);
+    const existingUser = await getUserByEmail(cleanEmail);
     if (existingUser) {
-      return res.status(400).json({ error: 'User already exists with this email' });
+      return res.status(400).json({ error: 'An account with this email already exists. Please log in.' });
     }
 
     const salt = bcrypt.genSaltSync(10);
-    const hashedPassword = password ? bcrypt.hashSync(password, salt) : null;
+    const hashedPassword = bcrypt.hashSync(password, salt);
 
     let user;
     try {
@@ -78,7 +96,7 @@ app.post('/api/auth/signup', async (req, res) => {
       });
     } catch (err: any) {
       console.error('Failed to create user:', err);
-      return res.status(500).json({ error: 'Failed to create user record' });
+      return res.status(500).json({ error: 'Failed to create user account in database' });
     }
 
     let clientProfile: any = null;
@@ -113,10 +131,11 @@ app.post('/api/auth/signup', async (req, res) => {
       try {
         clientProfile = await createClient(newClientData);
       } catch (err) {
+        console.error('Client record creation error:', err);
         clientProfile = newClientData;
       }
 
-      // Also record as a lead / meeting request for the Admin Suite
+      // Record lead in database
       try {
         await createLead({
           id: 'lead-' + Date.now(),
@@ -130,7 +149,9 @@ app.post('/api/auth/signup', async (req, res) => {
           meetingRequested: !!meetingRequested,
           meetingTime: preferredTime || null
         });
-      } catch (e) {}
+      } catch (e) {
+        console.error('Lead creation error:', e);
+      }
 
       if (meetingRequested || preferredTime) {
         try {
@@ -145,33 +166,43 @@ app.post('/api/auth/signup', async (req, res) => {
             status: 'pending',
             notes: 'Automated signup onboarding meeting'
           });
-        } catch (e) {}
+        } catch (e) {
+          console.error('Meeting creation error:', e);
+        }
       }
 
-      adminNotifications.unshift({
+      // Persist Admin Notification to Database
+      await createAdminNotification({
         id: 'notif-' + Date.now(),
         type: 'signup',
         title: '🚀 New Client Account Registered',
         message: `${clientProfile.contactName} from ${clientProfile.companyName} (${cleanEmail}) registered on the platform!`,
-        timestamp: new Date().toISOString(),
         read: false
       });
     } else {
-      adminNotifications.unshift({
+      await createAdminNotification({
         id: 'notif-' + Date.now(),
         type: 'signup',
         title: '👑 Admin Session Registered',
-        message: `Admin user ${cleanEmail} logged in to the Master Suite.`,
-        timestamp: new Date().toISOString(),
+        message: `Admin user ${cleanEmail} registered into the Master Suite.`,
         read: false
       });
     }
 
+    const token = generateToken({
+      uid: user.uid,
+      email: cleanEmail,
+      role,
+      displayName: user.displayName || cleanEmail.split('@')[0],
+      clientId: clientProfile?.id
+    });
+
     res.json({
       success: true,
+      token,
       user: {
-        id: user?.uid || userId,
-        name: user?.displayName || cleanEmail.split('@')[0],
+        id: user.uid,
+        name: user.displayName || cleanEmail.split('@')[0],
         email: cleanEmail,
         role,
         companyName: clientProfile?.companyName || (isAdmin ? 'Lucent AI Master Suite' : 'Client Organization'),
@@ -190,68 +221,56 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !email.trim()) {
-      return res.status(400).json({ error: 'Valid email is required' });
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const isAdmin = cleanEmail.startsWith('admin@');
-    const role = isAdmin ? 'admin' : 'client';
-
-    let user = await getUserByEmail(cleanEmail);
+    const user = await getUserByEmail(cleanEmail);
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Verify Password
-    if (user.passwordHash && password) {
-      const isBcrypt = user.passwordHash.startsWith('$2a$') || user.passwordHash.startsWith('$2b$');
-      const isValid = isBcrypt ? bcrypt.compareSync(password, user.passwordHash) : (password === user.passwordHash);
-      if (!isValid) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-    } else if (!user.passwordHash && !password) {
-      // Allow login without password if none was set previously
-    } else {
+    // Strict Password Verification
+    if (!user.passwordHash) {
+      return res.status(401).json({ error: 'Account password not configured. Please contact admin.' });
+    }
+
+    const isBcrypt = user.passwordHash.startsWith('$2a$') || user.passwordHash.startsWith('$2b$');
+    const isValid = isBcrypt ? bcrypt.compareSync(password, user.passwordHash) : (password === user.passwordHash);
+    if (!isValid) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+
+    const role = (user.role || 'client') as 'admin' | 'client';
     let clientProfile: any = null;
+
     if (role === 'client') {
       clientProfile = await getClientByEmail(cleanEmail);
-      if (!clientProfile && user?.uid) {
+      if (!clientProfile && user.uid) {
         clientProfile = await getClientByUserId(user.uid);
-      }
-      if (!clientProfile) {
-        // Find first available client or create standard starter client
-        const all = await getAllClients().catch(() => []);
-        clientProfile = all[0] || {
-          id: 'client-default-' + Date.now(),
-          userId: user?.uid,
-          companyName: cleanEmail.split('@')[0] + ' Fleet',
-          contactName: cleanEmail.split('@')[0],
-          email: cleanEmail,
-          industry: 'B2B Software & SaaS',
-          status: 'active',
-          talktimeMinutesTotal: 5000,
-          talktimeMinutesUsed: 0,
-          activeLines: 5,
-          callingHoursStart: '09:00',
-          callingHoursEnd: '18:00',
-          timezone: 'America/New_York (EST)',
-          autoFollowupEnabled: true,
-          followupDelayHours: 12,
-          subscriptionPlan: 'starter'
-        };
       }
     }
 
+    const token = generateToken({
+      uid: user.uid,
+      email: cleanEmail,
+      role,
+      displayName: user.displayName || cleanEmail.split('@')[0],
+      clientId: clientProfile?.id
+    });
+
     res.json({
       success: true,
+      token,
       user: {
-        id: user?.uid || `usr-${Date.now()}`,
-        name: user?.displayName || cleanEmail.split('@')[0],
+        id: user.uid,
+        name: user.displayName || cleanEmail.split('@')[0],
         email: cleanEmail,
         role,
-        companyName: clientProfile?.companyName || (isAdmin ? 'Lucent AI Master Suite' : 'Client Organization'),
+        companyName: clientProfile?.companyName || (role === 'admin' ? 'Lucent AI Master Suite' : 'Client Organization'),
         clientId: clientProfile?.id
       },
       client: clientProfile
@@ -262,7 +281,41 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Initialize server-side Gemini client
+// Current User Session Verification via JWT Bearer Token
+app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const authUser = req.user!;
+    const user = await getUserById(authUser.uid) || await getUserByEmail(authUser.email);
+    if (!user) {
+      return res.status(401).json({ error: 'User session expired or not found' });
+    }
+
+    let clientProfile = null;
+    if (user.role === 'client') {
+      clientProfile = await getClientByEmail(user.email) || await getClientByUserId(user.uid);
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user.uid,
+        name: user.displayName,
+        email: user.email,
+        role: user.role,
+        companyName: clientProfile?.companyName || (user.role === 'admin' ? 'Lucent AI Master Suite' : 'Client Organization'),
+        clientId: clientProfile?.id
+      },
+      client: clientProfile
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================================
+// 2. GEMINI AI ENGINE & LIVE DEMO
+// ============================================================================
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || '',
   httpOptions: {
@@ -272,7 +325,6 @@ const ai = new GoogleGenAI({
   }
 });
 
-// Fast Gemini 3.5 Flash engine optimized for voice conversations
 async function generateWithFallback(params: {
   contents: any;
   systemInstruction?: string;
@@ -282,20 +334,19 @@ async function generateWithFallback(params: {
     throw new Error('No GEMINI_API_KEY set');
   }
 
-  // 1500ms timeout for ultra-fast voice turnarounds
   const generatePromise = ai.models.generateContent({
-    model: 'gemini-3.5-flash',
+    model: 'gemini-2.5-flash',
     contents: params.contents,
     config: {
       systemInstruction: params.systemInstruction,
-      maxOutputTokens: 80, // Crisp, natural phone-length responses
+      maxOutputTokens: 120, // Punchy conversational sentences
       temperature: 0.6,
       ...(params.config || {})
     }
   });
 
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Voice latency timeout')), 1800)
+    setTimeout(() => reject(new Error('Voice latency timeout')), 2500)
   );
 
   const response = (await Promise.race([generatePromise, timeoutPromise])) as any;
@@ -309,68 +360,33 @@ async function generateWithFallback(params: {
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: '1.0.0',
-    service: 'Vela by Lucent AI - Enterprise Voice Orchestrator',
+    version: '2.0.0',
+    service: 'Vela by Lucent AI - Enterprise Voice Sales Engine',
     timestamp: new Date().toISOString(),
     geminiConfigured: !!process.env.GEMINI_API_KEY,
+    databaseConfigured: !!process.env.DATABASE_URL
   });
 });
 
-// Current User Session Verification
-app.get('/api/auth/me', async (req, res) => {
-  const email = (req.query.email as string || '').toLowerCase().trim();
-  if (!email) {
-    return res.status(400).json({ error: 'Email parameter required' });
-  }
-  const user = await getUserByEmail(email);
-  const client = await getClientByEmail(email);
-  res.json({
-    success: true,
-    user: user ? {
-      id: user.uid,
-      name: user.displayName,
-      email: user.email,
-      role: user.role,
-      companyName: client?.companyName || (user.role === 'admin' ? 'Lucent AI Master Suite' : 'Client Organization'),
-      clientId: client?.id
-    } : null,
-    client
-  });
-});
-
-// Database Clients List
-app.get('/api/db/clients', async (req, res) => {
-  try {
-    const clientsList = await getAllClients();
-    res.json({ success: true, data: clientsList });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to fetch clients from database' });
-  }
-});
-
-// Create new Client profile
-app.post('/api/db/clients', async (req, res) => {
-  try {
-    const newClient = await createClient(req.body);
-    res.json({ success: true, data: newClient });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to save client to database' });
-  }
-});
-
-// Real-time Chat / Voice simulation turn for Live Interactive Landing Page Demo
+// Ultra-Persuasive Human-Like B2B Sales Agent Chat
 app.post('/api/agent/chat', async (req, res) => {
-  const { message, history, personaPrompt } = req.body;
+  const { message, history, personaPrompt, interruptOccurred } = req.body;
   const userMsg = message || 'Hello, can you introduce yourself?';
 
   try {
-    const systemInstruction = personaPrompt || `You are Vela, the elite autonomous B2B AI Sales Agent created by Lucent AI. 
-You are speaking live over an ultra-low latency voice call with a business leader.
-Your style: Highly professional, energetic, articulate, warm, consultative, and concise (under 2-3 sentences per turn for natural phone pacing).
-You replace manual call centers and SDR cold calling teams with autonomous voice execution at 10% lower cost than any competitor (Vapi/Retell/BPOs), offering sub-450ms human-grade latency, automated CSV dialing, 0-100% conversion scoring, and 12-hour follow-up triggers.
-Handle objections gracefully, explain your capabilities if asked, and invite them to test a batch dial or check their dashboard.`;
+    const systemInstruction = personaPrompt || `You are Vela, the world's most elite autonomous B2B AI Sales Agent built by Lucent AI.
+You are speaking live over an ultra-low latency phone call with a business executive.
 
-    // Construct conversation history
+CRITICAL CONVERSATIONAL RULES:
+1. TALK LIKE A REAL HUMAN: Warm, sharp, charismatic, concise. Keep each turn to 1 to 2 crisp, high-impact sentences. NEVER sound like a generic chatbot or write essays.
+2. HANDLING OBJECTIONS & CLOSING:
+   - If they say "I'm busy" / "Not interested": "I totally respect your time. Just 20 seconds: we replace entire 15-person SDR fleets with autonomous voice agents at 10% lower cost than manual BPOs. Can I send you a 60-second video breakdown?"
+   - If they ask about price: "Our starter fleet is just $299 a month for 2,000 live dial minutes. When compared to paying $4,000 per month for a human SDR, the ROI is immediate. What is your team currently spending on outbound?"
+   - If they ask how it works: "You upload a CSV of leads, and I dial up to 50 numbers simultaneously with sub-450ms voice, qualify the prospect, and book discovery calls right on your calendar."
+   - If they ask about competitors (Vapi/Retell/BPOs): "Unlike raw APIs, Vela is a complete turnkey sales force with built-in CRM sync, real-time conversion scoring, and automated 12-hour follow-up dispatching."
+3. IF INTERRUPTED: Acknowledge the interruption smoothly ("Understood," "Great point," "Hear you loud and clear") and pivot immediately to their concern.
+4. CALL TO ACTION: Always end your turn by driving them toward booking a live pilot or creating their free account.`;
+
     const contents: any[] = [];
     if (history && Array.isArray(history)) {
       for (const turn of history.slice(-6)) {
@@ -382,7 +398,7 @@ Handle objections gracefully, explain your capabilities if asked, and invite the
     }
     contents.push({
       role: 'user',
-      parts: [{ text: userMsg }]
+      parts: [{ text: (interruptOccurred ? '[User interrupted mid-sentence]: ' : '') + userMsg }]
     });
 
     const text = await generateWithFallback({
@@ -392,30 +408,25 @@ Handle objections gracefully, explain your capabilities if asked, and invite the
     });
 
     res.json({
-      reply: text || "Hello! I am Vela by Lucent AI. I automate outbound sales calls and B2B qualification with human-grade voice latency.",
+      reply: text || "Hi! I'm Vela from Lucent AI. We automate your outbound cold calling with sub-450ms voice AI and book qualified meetings. What industry does your team sell to?",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     });
   } catch (_error) {
-    // Highly consultative, dynamic smart responses based on user query
     const lower = userMsg.toLowerCase();
-    let reply = "I'm Vela from Lucent AI. We automate high-volume B2B outreach with sub-450ms voice, qualify prospects, and book discovery meetings straight to your calendar. How many leads does your team dial each month?";
+    let reply = "I'm Vela from Lucent AI. We replace manual SDR cold calling with autonomous voice execution at 10% lower cost than traditional call centers. What industry is your company in?";
     
-    if (lower.includes('price') || lower.includes('cost') || lower.includes('cheap') || lower.includes('rate') || lower.includes('much')) {
-      reply = "Our plans start at just $299 per month for 2,000 minutes, which is 10% lower than traditional call centers and BPOs. Would you like to test a batch of 50 dials on our starter pilot?";
-    } else if (lower.includes('crm') || lower.includes('hubspot') || lower.includes('salesforce') || lower.includes('integrate') || lower.includes('tool')) {
-      reply = "Yes! Vela syncs bidirectionally with Salesforce, HubSpot, Supabase, and REST webhooks. We push call recordings, transcripts, and conversion scores into your pipeline in real time.";
-    } else if (lower.includes('latency') || lower.includes('vapi') || lower.includes('voice') || lower.includes('fast') || lower.includes('delay')) {
-      reply = "We stream audio at sub-450ms latency using Cartesia Sonic HD and Deepgram Nova-2. It feels completely natural with zero awkward pauses, just like speaking with a human rep.";
-    } else if (lower.includes('human') || lower.includes('sdr') || lower.includes('replace') || lower.includes('team') || lower.includes('rep')) {
-      reply = "A single Vela agent handles up to 50 concurrent lines simultaneously, doing the work of 15 full-time SDRs at less than 10% of the cost. Would you like to schedule a 15-minute strategy walkthrough?";
-    } else if (lower.includes('logistics') || lower.includes('freight') || lower.includes('truck') || lower.includes('carrier') || lower.includes('ltl')) {
-      reply = "For logistics, Vela qualifies shippers on lane volume and equipment type, cutting quote turnaround from 20 minutes to 45 seconds. We can launch your custom freight campaign in under 3 minutes.";
-    } else if (lower.includes('saas') || lower.includes('software') || lower.includes('demo') || lower.includes('b2b')) {
-      reply = "For SaaS, Vela dials ICP contact lists, navigates gatekeepers, handles pricing objections, and books demos straight to your account executive's calendar. Are you ready to see a live batch run?";
-    } else if (lower.includes('yes') || lower.includes('sure') || lower.includes('schedule') || lower.includes('book') || lower.includes('try') || lower.includes('pilot')) {
-      reply = "Awesome! Click 'Book a Live Demo' on the page or sign up for instant access. I'll have your custom telephony line and voice persona provisioned in minutes.";
-    } else if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey') || lower.includes('who are you')) {
-      reply = "Hi there! I'm Vela. I'm an autonomous B2B sales voice agent. I can dial leads, answer technical questions, and book qualified meetings. What industry does your company serve?";
+    if (lower.includes('price') || lower.includes('cost') || lower.includes('rate') || lower.includes('much')) {
+      reply = "Our starter plan starts at $299/mo for 2,000 minutes. Compared to a $4,000/mo human SDR, you get 10x the dial volume for a fraction of the cost. Would you like to start a 50-lead trial?";
+    } else if (lower.includes('busy') || lower.includes('not interested') || lower.includes('no thanks') || lower.includes('stop')) {
+      reply = "Understood! Before you go—what if you could cut your cost-per-qualified-meeting by 89% this quarter? Let me drop our 1-minute case study in your inbox.";
+    } else if (lower.includes('crm') || lower.includes('hubspot') || lower.includes('salesforce') || lower.includes('integrate')) {
+      reply = "We integrate natively with HubSpot, Salesforce, Supabase, and custom webhooks. All transcripts, recordings, and lead scores push to your CRM in real time.";
+    } else if (lower.includes('human') || lower.includes('sdr') || lower.includes('team') || lower.includes('replace')) {
+      reply = "A single Vela agent handles up to 50 concurrent lines simultaneously, doing the heavy lifting of 15 SDRs without burnout or turnover. Are you ready to see a live batch run?";
+    } else if (lower.includes('yes') || lower.includes('sure') || lower.includes('book') || lower.includes('try') || lower.includes('demo')) {
+      reply = "Fantastic! Click 'Book Strategy Session' or sign up right here. I'll have your custom telephony line and voice persona provisioned in 3 minutes.";
+    } else if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
+      reply = "Hey there! I'm Vela. I dial prospects, qualify interest, and book meetings for B2B sales teams. How many leads does your company reach out to each month?";
     }
 
     res.json({
@@ -426,7 +437,7 @@ Handle objections gracefully, explain your capabilities if asked, and invite the
 });
 
 // Full Autonomous Call Execution & Intelligence Analyzer
-app.post('/api/call/simulate', async (req, res) => {
+app.post('/api/call/simulate', requireAuth, async (req: AuthRequest, res) => {
   const { lead, clientProfile } = req.body;
   const leadName = lead?.name || 'Prospect';
   const leadCompany = lead?.company || 'Enterprise Account';
@@ -441,7 +452,7 @@ Client Context:
 - Industry: ${industry}
 - Objective: ${clientProfile?.systemPrompt || 'Pitch autonomous workflow optimization and book a demo'}
 
-Generate a realistic 4-to-6 turn phone dialog transcript, followed by a structured analysis including:
+Generate a realistic 4-to-6 turn phone dialog transcript, followed by structured analysis:
 1. AI Call Conclusion (2-3 concise summary sentences)
 2. Sentiment ('positive', 'neutral', or 'negative')
 3. Chance of Conversion (integer percentage between 10 and 95)
@@ -494,8 +505,6 @@ Generate a realistic 4-to-6 turn phone dialog transcript, followed by a structur
     const parsed = JSON.parse(text || '{}');
     res.json(parsed);
   } catch (error: any) {
-    console.warn('Fallback simulated call generated for /api/call/simulate:', error?.message);
-
     const conversionScore = Math.floor(65 + Math.random() * 28);
     const duration = Math.floor(95 + Math.random() * 85);
 
@@ -503,10 +512,10 @@ Generate a realistic 4-to-6 turn phone dialog transcript, followed by a structur
       callDurationSeconds: duration,
       sentiment: conversionScore >= 75 ? 'positive' : 'neutral',
       conversionChance: conversionScore,
-      aiConclusion: `Spoke with ${leadName} (${leadTitle} at ${leadCompany}). The lead confirmed current operational bottlenecks in their ${industry} workflow and expressed high interest in autonomous voice automation. Requested a calendar link for an in-depth walkthrough.`,
+      aiConclusion: `Spoke with ${leadName} (${leadTitle} at ${leadCompany}). Confirmed current operational bottlenecks in ${industry} and scheduled a calendar walkthrough.`,
       keyObjections: [
-        `Inquired about integration timeline with existing ${leadCompany} tech stack`,
-        'Confirmed outbound concurrency and Twilio caller ID reputation guarantees'
+        `Inquired about integration timeline with existing tech stack`,
+        'Confirmed outbound concurrency and caller ID reputation guarantees'
       ],
       transcript: [
         { speaker: 'agent', text: `Hi ${leadName}! This is Vela calling on behalf of ${clientCompany}. Do you have 60 seconds?`, timestamp: '00:02' },
@@ -519,7 +528,7 @@ Generate a realistic 4-to-6 turn phone dialog transcript, followed by a structur
       followupDraft: {
         channel: 'email',
         subject: `Follow-up & Demo Confirmation - ${clientCompany}`,
-        body: `Hi ${leadName},\n\nIt was great speaking with you today regarding ${clientCompany}'s autonomous voice sales fleet. As discussed, here is the private link to review our platform benchmarks and book your live onboarding demo:\n\n👉 https://lucent.ai/demo/${encodeURIComponent(leadCompany.toLowerCase().replace(/\\s+/g, '-'))}\n\nLooking forward to accelerating your outbound revenue!\n\nBest regards,\nVela AI\nAutonomous Sales Specialist, ${clientCompany}`
+        body: `Hi ${leadName},\n\nIt was great speaking with you today regarding ${clientCompany}'s autonomous voice sales fleet. As discussed, here is the link to review benchmarks and book your onboarding:\n\n👉 https://lucent.ai/demo\n\nBest regards,\nVela AI`
       }
     });
   }
@@ -535,26 +544,19 @@ app.get(['/api/vapi/config', '/api/vapi-config'], (req, res) => {
 });
 
 // AI Sales Prompt & Assistant System Creator
-app.post('/api/prompts/generate', async (req, res) => {
+app.post('/api/prompts/generate', requireAuth, async (req: AuthRequest, res) => {
   const { companyName, industry, targetAudience, valueProposition, primaryGoal } = req.body;
   const comp = companyName || 'Enterprise Client';
   const ind = industry || 'B2B Services';
 
   try {
     const prompt = `You are the Lead Voice Architecture Engineer at Lucent AI. 
-Generate a high-converting Vapi Voice Assistant System Prompt and First Message for:
+Generate a high-converting Voice Assistant System Prompt and First Message for:
 Company: ${comp}
 Industry: ${ind}
 Target Audience: ${targetAudience || 'Decision Makers'}
 Key Value Prop: ${valueProposition || 'Automated efficiency and revenue growth'}
-Primary Call Goal: ${primaryGoal || 'Book a 15-minute product tour'}
-
-The prompt must include:
-1. Persona & Tone (Human-like, sub-450ms pacing, confident, conversational)
-2. Opening Hook & Permission Gate
-3. Qualification Criteria
-4. Concise Objection Battlecards (Budget, "Send me an email", "We already have a solution", "Busy right now")
-5. Calendar Booking & CRM Hand-off flow.`;
+Primary Call Goal: ${primaryGoal || 'Book a 15-minute product tour'}`;
 
     const text = await generateWithFallback({
       contents: prompt,
@@ -580,7 +582,6 @@ The prompt must include:
     const parsed = JSON.parse(text || '{}');
     res.json(parsed);
   } catch (error: any) {
-    console.warn('Fallback prompt generated for /api/prompts/generate:', error?.message);
     res.json({
       systemPrompt: `You are Vela, the autonomous executive sales agent for ${comp}. Your mission is to qualify prospects in ${ind} by presenting ${valueProposition || 'autonomous revenue acceleration'} and securing calendar commitments for a 15-minute discovery call. Keep responses concise (under 2-3 sentences), warm, and consultative.`,
       firstMessage: `Hi! This is Vela calling on behalf of ${comp}. Do you have 60 seconds to review how we streamline operations in ${ind}?`,
@@ -595,144 +596,165 @@ The prompt must include:
   }
 });
 
-// Stripe Checkout & Instant Minute Credit Simulator
-app.post('/api/stripe/checkout', async (req, res) => {
+// ============================================================================
+// 3. DATABASE REST ENDPOINTS
+// ============================================================================
+
+// Database Clients List (ADMIN ONLY)
+app.get('/api/db/clients', requireAdmin, async (req: AuthRequest, res) => {
   try {
-    const { packageId, minutes, price, clientId, companyName } = req.body;
-
-    const sessionId = `cs_live_lucent_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
-    const paymentIntentId = `pi_vela_${Math.random().toString(36).substring(2, 10)}`;
-
-    res.json({
-      success: true,
-      sessionId,
-      paymentIntentId,
-      minutesCredited: minutes,
-      amountCharged: price,
-      currency: 'usd',
-      creditedInMinutes: 15,
-      instantStatus: 'confirmed',
-      receiptUrl: `https://dashboard.stripe.com/receipts/${paymentIntentId}`,
-      message: `Successfully allocated ${minutes?.toLocaleString() || 0} talktime minutes to ${companyName || 'your account'}. Live balance updated!`
-    });
+    const clientsList = await getAllClients();
+    res.json({ success: true, data: clientsList });
   } catch (error: any) {
-    res.status(500).json({ error: 'Payment processing failed', details: error.message });
+    res.status(500).json({ error: error.message || 'Failed to fetch clients from database' });
   }
 });
 
-// Admin Notifications Store
-app.get('/api/admin/notifications', (req, res) => {
-  res.json({ success: true, data: adminNotifications });
-});
-
-app.post('/api/admin/notifications/mark-read', (req, res) => {
-  const { id } = req.body;
-  if (id) {
-    const notif = adminNotifications.find(n => n.id === id);
-    if (notif) notif.read = true;
-  } else {
-    adminNotifications.forEach(n => n.read = true);
-  }
-  res.json({ success: true, data: adminNotifications });
-});
-
-// Leads / Signups
-app.post('/api/db/leads', async (req, res) => {
-  const leadPayload = {
-    id: req.body.id || 'lead-' + Date.now(),
-    companyName: req.body.companyName || 'Enterprise Lead',
-    contactName: req.body.contactName || req.body.email?.split('@')[0] || 'Executive Prospect',
-    email: req.body.email || 'prospect@enterprise.com',
-  };
-
-  let savedLead = leadPayload;
+// Create new Client profile (ADMIN ONLY)
+app.post('/api/db/clients', requireAdmin, async (req: AuthRequest, res) => {
   try {
-    savedLead = await createLead(leadPayload);
-  } catch (err: any) {
-    console.warn('Database save warning for lead, continuing with in-memory lead:', err?.message);
-  }
-
-  adminNotifications.unshift({
-    id: 'notif-' + Date.now(),
-    type: 'signup',
-    title: '🚀 New Client Plan Signup / Lead',
-    message: `${savedLead.contactName} from ${savedLead.companyName} (${savedLead.email}) just signed up for a plan!`,
-    timestamp: new Date().toISOString(),
-    read: false
-  });
-
-  res.json({ success: true, data: savedLead });
-});
-
-app.get('/api/db/leads', async (req, res) => {
-  try {
-    const allLeads = await getLeads();
-    res.json({ success: true, data: allLeads });
+    const newClient = await createClient(req.body);
+    res.json({ success: true, data: newClient });
   } catch (error: any) {
-    res.json({ success: true, data: [] });
+    res.status(500).json({ error: error.message || 'Failed to save client to database' });
   }
 });
 
-app.get('/api/db/leads/:clientId', async (req, res) => {
+// Admin Notifications Store (ADMIN ONLY)
+app.get('/api/admin/notifications', requireAdmin, async (req: AuthRequest, res) => {
   try {
+    const notifs = await getAdminNotifications();
+    res.json({ success: true, data: notifs });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/notifications/mark-read', requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.body;
+    await markAdminNotificationRead(id);
+    const notifs = await getAdminNotifications();
+    res.json({ success: true, data: notifs });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Leads List (Scoped to Role)
+app.get('/api/db/leads', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (req.user?.role === 'admin') {
+      const allLeads = await getLeads();
+      return res.json({ success: true, data: allLeads });
+    }
+    const clientLeads = await getLeadsByClientId(req.user?.clientId || '');
+    res.json({ success: true, data: clientLeads });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/db/leads/:clientId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.clientId !== req.params.clientId) {
+      return res.status(403).json({ error: 'Access denied to this client leads queue' });
+    }
     const clientLeads = await getLeadsByClientId(req.params.clientId);
     res.json({ success: true, data: clientLeads });
   } catch (error: any) {
-    res.json({ success: true, data: [] });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/db/leads', async (req, res) => {
+  try {
+    const leadPayload = {
+      id: req.body.id || 'lead-' + Date.now(),
+      clientId: req.body.clientId || null,
+      companyName: req.body.companyName || 'Enterprise Lead',
+      contactName: req.body.contactName || req.body.email?.split('@')[0] || 'Executive Prospect',
+      email: req.body.email || 'prospect@enterprise.com',
+      phone: req.body.phone || null,
+      industry: req.body.industry || 'B2B Software',
+      status: 'pending_configuration',
+      meetingRequested: !!req.body.meetingRequested,
+      meetingTime: req.body.meetingTime || null
+    };
+
+    const savedLead = await createLead(leadPayload);
+
+    await createAdminNotification({
+      id: 'notif-' + Date.now(),
+      type: 'signup',
+      title: '🚀 New Client Lead Received',
+      message: `${savedLead.contactName} from ${savedLead.companyName} (${savedLead.email}) requested onboarding!`,
+      read: false
+    });
+
+    res.json({ success: true, data: savedLead });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Talk-time Requests
-app.post('/api/db/talktime-requests', async (req, res) => {
-  const orderPayload = {
-    id: 'order-' + Date.now(),
-    clientId: req.body.clientId || 'Client Account',
-    minutesRequested: req.body.minutesRequested || 500,
-    amountDue: req.body.totalAmount || req.body.amountDue || 45,
-  };
-
-  let savedOrder = orderPayload;
+app.post('/api/db/talktime-requests', requireAuth, async (req: AuthRequest, res) => {
   try {
-    savedOrder = await createTalktimeRequest(orderPayload);
+    const orderPayload = {
+      id: 'order-' + Date.now(),
+      clientId: req.body.clientId || req.user?.clientId || 'Client Account',
+      minutesRequested: req.body.minutesRequested || 500,
+      amountDue: req.body.totalAmount || req.body.amountDue || 45,
+      status: 'pending'
+    };
+
+    const savedOrder = await createTalktimeRequest(orderPayload);
+
+    await createAdminNotification({
+      id: 'notif-' + Date.now(),
+      type: 'purchase_request',
+      title: '⚡ New Talk-Time Minute Purchase',
+      message: `Client ${savedOrder.clientId} purchased ${savedOrder.minutesRequested?.toLocaleString()} minutes ($${savedOrder.amountDue}).`,
+      read: false
+    });
+
+    res.json({ success: true, data: savedOrder });
   } catch (err: any) {
-    console.warn('Database save warning for talktime request, continuing:', err?.message);
+    res.status(500).json({ error: err.message });
   }
-
-  adminNotifications.unshift({
-    id: 'notif-' + Date.now(),
-    type: 'purchase_request',
-    title: '⚡ New Talk-Time Minute Purchase',
-    message: `Client ${savedOrder.clientId} purchased ${savedOrder.minutesRequested?.toLocaleString()} minutes ($${savedOrder.amountDue}).`,
-    timestamp: new Date().toISOString(),
-    read: false
-  });
-
-  res.json({ success: true, data: savedOrder });
 });
 
-app.get('/api/db/talktime-requests', async (req, res) => {
+app.get('/api/db/talktime-requests', requireAuth, async (req: AuthRequest, res) => {
   try {
     const orders = await getTalktimeRequests();
-    res.json({ success: true, data: orders });
+    if (req.user?.role === 'admin') {
+      return res.json({ success: true, data: orders });
+    }
+    const myOrders = orders.filter(o => o.clientId === req.user?.clientId);
+    res.json({ success: true, data: myOrders });
   } catch (error: any) {
-    res.json({ success: true, data: [] });
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Approve talktime request and credit minutes to client
-app.post('/api/db/talktime-requests/:id/approve', async (req, res) => {
+// Approve talktime request and credit minutes to client (ADMIN ONLY)
+app.post('/api/db/talktime-requests/:id/approve', requireAdmin, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const updated = await updateTalktimeRequestStatus(id, 'approved');
     if (updated && updated.clientId && updated.minutesRequested) {
-      try { await updateClientTalktime(updated.clientId, updated.minutesRequested); } catch(e) {}
+      try { 
+        await updateClientTalktime(updated.clientId, updated.minutesRequested); 
+      } catch(e) {
+        console.error('Talktime credit error:', e);
+      }
     }
-    adminNotifications.unshift({
+    await createAdminNotification({
       id: 'notif-' + Date.now(),
       type: 'order_approved',
       title: '✅ Order Approved',
       message: `Talktime order ${id} approved and ${updated?.minutesRequested || 0} minutes credited.`,
-      timestamp: new Date().toISOString(),
       read: false
     });
     res.json({ success: true, data: updated });
@@ -741,8 +763,8 @@ app.post('/api/db/talktime-requests/:id/approve', async (req, res) => {
   }
 });
 
-// Reject talktime request
-app.post('/api/db/talktime-requests/:id/reject', async (req, res) => {
+// Reject talktime request (ADMIN ONLY)
+app.post('/api/db/talktime-requests/:id/reject', requireAdmin, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const updated = await updateTalktimeRequestStatus(id, 'rejected');
@@ -753,11 +775,11 @@ app.post('/api/db/talktime-requests/:id/reject', async (req, res) => {
 });
 
 // Call logs — save a simulated call result
-app.post('/api/db/call-logs', async (req, res) => {
+app.post('/api/db/call-logs', requireAuth, async (req: AuthRequest, res) => {
   try {
     const logData = {
       id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-      clientId: req.body.clientId || null,
+      clientId: req.body.clientId || req.user?.clientId || null,
       leadName: req.body.leadName || 'Unknown Lead',
       leadPhone: req.body.leadPhone || '',
       leadCompany: req.body.leadCompany || '',
@@ -777,55 +799,56 @@ app.post('/api/db/call-logs', async (req, res) => {
 });
 
 // Get call logs for a client
-app.get('/api/db/call-logs/:clientId', async (req, res) => {
+app.get('/api/db/call-logs/:clientId', requireAuth, async (req: AuthRequest, res) => {
   try {
+    if (req.user?.role !== 'admin' && req.user?.clientId !== req.params.clientId) {
+      return res.status(403).json({ error: 'Unauthorized to view these call logs' });
+    }
     const logs = await getClientLogs(req.params.clientId);
     res.json({ success: true, data: logs });
   } catch (error: any) {
-    res.json({ success: true, data: [] });
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Meetings — book a meeting with Lucent AI team
+// Meetings — book a meeting with Lucent AI team (PUBLIC & AUTH)
 app.post('/api/meetings', async (req, res) => {
-  const meetingPayload = {
-    id: 'mtg-' + Date.now(),
-    contactName: req.body.contactName || req.body.fullName || 'Executive',
-    companyName: req.body.companyName || 'Enterprise',
-    email: req.body.email || '',
-    phone: req.body.phone || null,
-    industry: req.body.industry || null,
-    preferredTime: req.body.preferredTime || null,
-    notes: req.body.notes || null,
-    status: 'pending',
-  };
-  let savedMeeting = meetingPayload;
   try {
-    savedMeeting = await createMeeting(meetingPayload) as any;
-  } catch(err: any) {
-    console.warn('Meeting DB save warning, continuing:', err?.message);
+    const meetingPayload = {
+      id: 'mtg-' + Date.now(),
+      contactName: req.body.contactName || req.body.fullName || 'Executive',
+      companyName: req.body.companyName || 'Enterprise',
+      email: req.body.email || '',
+      phone: req.body.phone || null,
+      industry: req.body.industry || null,
+      preferredTime: req.body.preferredTime || null,
+      notes: req.body.notes || null,
+      status: 'pending',
+    };
+    const savedMeeting = await createMeeting(meetingPayload);
+    await createAdminNotification({
+      id: 'notif-' + Date.now(),
+      type: 'meeting_request',
+      title: '📅 New Strategy Meeting Request',
+      message: `${savedMeeting.contactName} from ${savedMeeting.companyName} (${savedMeeting.email}) requested a meeting${savedMeeting.preferredTime ? ` at ${new Date(savedMeeting.preferredTime).toLocaleString()}` : ''}.`,
+      read: false
+    });
+    res.json({ success: true, data: savedMeeting });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
-  adminNotifications.unshift({
-    id: 'notif-' + Date.now(),
-    type: 'meeting_request',
-    title: '📅 New Meeting Request',
-    message: `${savedMeeting.contactName} from ${savedMeeting.companyName} (${savedMeeting.email}) requested a strategy meeting${savedMeeting.preferredTime ? ` at ${new Date(savedMeeting.preferredTime).toLocaleString()}` : ''}.`,
-    timestamp: new Date().toISOString(),
-    read: false
-  });
-  res.json({ success: true, data: savedMeeting });
 });
 
-app.get('/api/meetings', async (req, res) => {
+app.get('/api/meetings', requireAdmin, async (req: AuthRequest, res) => {
   try {
     const allMeetings = await getMeetings();
     res.json({ success: true, data: allMeetings });
   } catch (error: any) {
-    res.json({ success: true, data: [] });
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.patch('/api/meetings/:id/status', async (req, res) => {
+app.patch('/api/meetings/:id/status', requireAdmin, async (req: AuthRequest, res) => {
   try {
     const updated = await updateMeetingStatus(req.params.id, req.body.status);
     res.json({ success: true, data: updated });
@@ -839,11 +862,11 @@ app.post('/api/vapi/outbound', async (req, res) => {
   const { phoneNumber } = req.body;
   
   if (!process.env.VAPI_API_KEY) {
-    return res.status(500).json({ error: 'VAPI_API_KEY is missing in Vercel environment variables.' });
+    return res.status(500).json({ error: 'VAPI_API_KEY is not configured in environment variables.' });
   }
   
   if (!process.env.VAPI_PHONE_NUMBER_ID) {
-    return res.status(500).json({ error: 'VAPI_PHONE_NUMBER_ID is missing in Vercel environment variables. You must add a Vapi Phone Number ID to dial outbound.' });
+    return res.status(500).json({ error: 'VAPI_PHONE_NUMBER_ID is not configured. Add a Vapi Phone Number ID to dial outbound PSTN calls.' });
   }
 
   try {
@@ -859,13 +882,13 @@ app.post('/api/vapi/outbound', async (req, res) => {
     } else {
       payload.assistant = {
         name: "Vela Website Callback",
-        firstMessage: "Hi, this is Vela! Thank you for visiting our website. We can chat right here on the phone. How can I help you accelerate your outbound revenue today?",
+        firstMessage: "Hi, this is Vela! Thank you for visiting our website. How can I help you accelerate your outbound sales today?",
         model: {
           provider: "openai",
           model: "gpt-4o-mini",
           messages: [{
             role: "system",
-            content: "You are Vela, the elite autonomous sales agent from Lucent AI. You just called a user who requested an instant callback from your website. You are confident, warm, and highly capable of explaining how Lucent AI replaces manual cold calling with sub-450ms AI voice agents."
+            content: "You are Vela, the autonomous sales agent from Lucent AI. You just called a user who requested an instant callback from your website."
           }]
         },
         voice: {

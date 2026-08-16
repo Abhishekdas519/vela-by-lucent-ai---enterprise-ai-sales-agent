@@ -52,6 +52,17 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   onUpdateLeads,
   onOpenBuyMinutes,
 }) => {
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem('vela_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as any || {}),
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(url, { ...options, headers });
+  };
   const [activeTab, setActiveTab] = useState<'campaigns' | 'leads' | 'analytics' | 'playground' | 'settings'>('leads');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -185,9 +196,8 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
 
       try {
         // Call backend simulate endpoint
-        const response = await fetch('/api/call/simulate', {
+        const response = await authFetch('/api/call/simulate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lead, clientProfile: client })
         });
         const result = await response.json();
@@ -227,9 +237,8 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
         try {
           const finishedLead = finishedLeads.find(l => l.id === lead.id);
           if (finishedLead) {
-            fetch('/api/db/call-logs', {
+            authFetch('/api/db/call-logs', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 clientId: client.id,
                 leadName: lead.name,
@@ -273,9 +282,8 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
     onUpdateLeads(updated);
 
     try {
-      const response = await fetch('/api/call/simulate', {
+      const response = await authFetch('/api/call/simulate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead, clientProfile: client })
       });
       const result = await response.json();
@@ -311,9 +319,8 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
       try {
         const finishedLead = finishedLeads.find(l => l.id === lead.id);
         if (finishedLead) {
-          fetch('/api/db/call-logs', {
+          authFetch('/api/db/call-logs', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               clientId: client.id,
               leadName: lead.name,

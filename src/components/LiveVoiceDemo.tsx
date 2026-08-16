@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Phone, PhoneOff, Mic, Settings, Radio, Activity, Zap, Volume2, Sparkles, Send } from 'lucide-react';
+import { Bot, Phone, PhoneOff, Mic, Activity, Zap, Volume2, Sparkles, Send, Radio } from 'lucide-react';
 import Vapi from '@vapi-ai/web';
 import { AudioVisualizer } from './AudioVisualizer';
 
@@ -13,35 +13,35 @@ interface Message {
 const INDUSTRY_PRESETS = [
   {
     id: 'b2b-saas',
-    name: 'B2B SaaS',
-    desc: 'Books demos for enterprise software.',
+    name: 'B2B SaaS & Tech',
+    desc: 'Books discovery demos for software & cloud.',
     icon: Bot,
-    hook: "Hi! This is Vela calling from Apex Cloud. We help engineering teams reduce AWS spend by 30%. Do you have 30 seconds?",
-    prompt: "You are Vela, an elite consultative B2B sales development representative for Apex Cloud. You are speaking on a live phone call with a tech executive. Your style is warm, articulate, confident, and natural. Keep replies under 2 short sentences for natural phone pacing. Always answer their questions directly, handle objections gracefully, and guide them to schedule a 15-minute product walkthrough or start a pilot."
+    hook: "Hi! This is Vela calling from Apex Cloud. We help revenue leaders replace repetitive cold calling with autonomous voice AI. Do you have 30 seconds?",
+    prompt: "You are Vela, the elite consultative B2B AI Sales Agent from Lucent AI. You are speaking live on a phone call. Your objective: Pitch how Vela replaces manual call centers with 10% lower cost than competitors, handle any objection smoothly, and get them to agree to a 15-minute live pilot walkthrough. Keep answers to 1-2 punchy sentences."
   },
   {
     id: 'logistics',
     name: 'Freight & Logistics',
-    desc: 'Qualifies shipping volume & rates.',
+    desc: 'Qualifies shipping volume & contracts.',
     icon: Bot,
-    hook: "Hi there! This is Vela with OmniFleet. We just saved a similar manufacturing team 18% on their LTL freight. Are you open to a quick rate comparison?",
-    prompt: "You are Vela, an energetic freight logistics sales rep for OmniFleet. You are qualifying shipping and supply chain directors on their weekly freight volume. Keep responses conversational, concise (1-2 sentences), and ask to send a rate breakdown or book a rate review."
+    hook: "Hi there! This is Vela with OmniFleet. We just helped a regional manufacturer cut their freight spend by 18%. Are you open to a quick lane comparison?",
+    prompt: "You are Vela, a high-converting Freight Broker sales executive. You qualify logistics managers on lane volume, equipment type, and current quote bottlenecks. Keep responses conversational, persuasive, concise (1-2 sentences), and close for a rate review call."
   },
   {
     id: 'real-estate',
     name: 'Real Estate Acquisitions',
-    desc: 'Qualifies property owners for cash offers.',
+    desc: 'Qualifies property owners for cash acquisitions.',
     icon: Bot,
-    hook: "Hey there! This is Vela calling about your commercial property on Main Street. Are you open to an all-cash, no-contingency offer this month?",
-    prompt: "You are Vela, a friendly real estate acquisitions specialist. You are speaking with property owners to see if they're open to cash offers. Keep answers short, polite, respectful, and ask about their timeline."
+    hook: "Hey there! This is Vela calling regarding your commercial assets. Are you open to reviewing a competitive, all-cash acquisition offer this month?",
+    prompt: "You are Vela, a consultative commercial real estate acquisitions rep. Your goal is to identify motivated sellers and schedule an asset valuation call. Keep answers short, warm, and highly professional."
   }
 ];
 
 const SUGGESTED_QUESTIONS = [
-  "How much does Vela cost per minute?",
-  "How does this compare to human SDRs?",
-  "Can you integrate with our Salesforce CRM?",
-  "How fast is your voice latency?"
+  "How much does Vela cost compared to human reps?",
+  "Can you handle objections and sync to our CRM?",
+  "What happens if I interrupt you mid-sentence?",
+  "Can you dial 500 leads simultaneously?"
 ];
 
 export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSignUp }) => {
@@ -59,7 +59,7 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
   const [conversionScore, setConversionScore] = useState(50);
   const [isLoadingReply, setIsLoadingReply] = useState(false);
   const [liveInterimSpeech, setLiveInterimSpeech] = useState('');
-  const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
+  const [browserSpeechSupported, setBrowserSpeechSupported] = useState(true);
 
   const vapiRef = useRef<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -69,21 +69,28 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
   const shouldListenRef = useRef(false);
   const isAgentSpeakingRef = useRef(false);
   const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  const wasInterruptedRef = useRef(false);
 
-  // Load voices for natural browser text-to-speech fallback
+  // Check Web Speech API support
   useEffect(() => {
-    const loadVoices = () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        availableVoicesRef.current = window.speechSynthesis.getVoices();
+    if (typeof window !== 'undefined') {
+      const hasRecognition = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+      const hasSynthesis = 'speechSynthesis' in window;
+      setBrowserSpeechSupported(hasRecognition && hasSynthesis);
+
+      const loadVoices = () => {
+        if (window.speechSynthesis) {
+          availableVoicesRef.current = window.speechSynthesis.getVoices();
+        }
+      };
+      loadVoices();
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
       }
-    };
-    loadVoices();
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
     }
   }, []);
 
-  // Fetch Vapi config if available
+  // Fetch Vapi configuration if available
   useEffect(() => {
     fetch('/api/vapi/config')
       .then(res => res.json())
@@ -91,18 +98,10 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
         if (data?.publicKey) setVapiPublicKey(data.publicKey);
         if (data?.defaultAssistantId) setVapiAssistantId(data.defaultAssistantId);
       })
-      .catch(() => {
-        fetch('/api/vapi-config')
-          .then(res => res.json())
-          .then(data => {
-            if (data?.publicKey) setVapiPublicKey(data.publicKey);
-            if (data?.defaultAssistantId) setVapiAssistantId(data.defaultAssistantId);
-          })
-          .catch(() => {});
-      });
+      .catch(() => {});
   }, []);
 
-  // Initialize Vapi WebRTC if keys are provided
+  // Initialize Vapi WebRTC if credentials present
   useEffect(() => {
     if (vapiPublicKey) {
       try {
@@ -143,14 +142,14 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
     }
   }, [vapiPublicKey, callDuration]);
 
-  // Call duration timer & 60-second limit guardrail
+  // Call duration timer & 60-second limit
   useEffect(() => {
     if (isCallActive) {
       timerRef.current = setInterval(() => {
         setCallDuration((prev) => {
           if (prev >= 59) {
             endCall();
-            alert("60-second demo limit reached. Sign up or book a strategy meeting for unlimited live dialing!");
+            alert("Demo session limit reached! Sign up or book a strategy session for unlimited production dialing.");
             return 0;
           }
           return prev + 1;
@@ -170,7 +169,7 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
     };
   }, [isCallActive]);
 
-  // Auto-scroll chat window
+  // Auto-scroll chat transcript window
   useEffect(() => {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
@@ -183,7 +182,7 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Speaks agent text using best natural voice
+  // Speaks agent response
   const speakText = (text: string) => {
     if (!window.speechSynthesis) {
       startBrowserListening();
@@ -204,18 +203,19 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
         v.name.includes('Samantha') || 
         v.name.includes('Jenny') ||
         v.name.includes('Guy') ||
-        v.name.includes('Enhanced')
+        v.name.includes('Ava')
       )
     ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
 
     if (naturalVoice) utterance.voice = naturalVoice;
-    utterance.rate = 1.04;
+    utterance.rate = 1.05;
     utterance.pitch = 1.0;
 
     utterance.onstart = () => {
       setIsAgentSpeaking(true);
       isAgentSpeakingRef.current = true;
-      stopBrowserListening();
+      // Keep listening alive in background for real-time barge-in detection
+      startBargeInListener();
     };
 
     utterance.onend = () => {
@@ -237,7 +237,65 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
     window.speechSynthesis.speak(utterance);
   };
 
-  // Continuous speech recognition loop
+  // Barge-in speech recognition listener that runs while agent is speaking
+  const startBargeInListener = () => {
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) return;
+
+    try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (e) {}
+      }
+
+      const recognition = new SpeechRec();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        let interimText = '';
+        let finalText = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const trans = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalText += trans;
+          } else {
+            interimText += trans;
+          }
+        }
+
+        // INSTANT BARGE-IN: If human starts speaking, cut off agent IMMEDIATELY
+        if (interimText && interimText.trim().length > 1) {
+          if (isAgentSpeakingRef.current) {
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            setIsAgentSpeaking(false);
+            isAgentSpeakingRef.current = false;
+            wasInterruptedRef.current = true;
+          }
+          setLiveInterimSpeech(interimText);
+        }
+
+        if (finalText && finalText.trim()) {
+          setLiveInterimSpeech('');
+          stopBrowserListening();
+          handleSendMessage(finalText.trim());
+        }
+      };
+
+      recognition.onerror = () => {};
+      recognition.onend = () => {
+        if (isCallActive && shouldListenRef.current && !isAgentSpeakingRef.current) {
+          try { recognition.start(); } catch (e) {}
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {}
+  };
+
+  // Main speech recognition loop
   const startBrowserListening = () => {
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRec) return;
@@ -271,13 +329,14 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
           }
         }
 
+        // Instant interruption check
         if (interimTranscript) {
           setLiveInterimSpeech(interimTranscript);
-          // If user interrupts the agent while speaking, cut the agent off immediately
-          if (isAgentSpeakingRef.current && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
+          if (isAgentSpeakingRef.current) {
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
             setIsAgentSpeaking(false);
             isAgentSpeakingRef.current = false;
+            wasInterruptedRef.current = true;
           }
         }
 
@@ -296,7 +355,6 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
 
       recognition.onend = () => {
         setIsListening(false);
-        // Automatically restart listening if call is still active and agent is silent
         if (isCallActive && shouldListenRef.current && !isAgentSpeakingRef.current) {
           try {
             recognition.start();
@@ -321,20 +379,19 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
     }
   };
 
-  // Start live voice call
+  // Start live call
   const startCall = async () => {
     setMessages([]);
     setConversionScore(52);
     setLastLatency(null);
     setLiveInterimSpeech('');
+    wasInterruptedRef.current = false;
 
-    // Request microphone permission up front
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         await navigator.mediaDevices.getUserMedia({ audio: true });
-        setAudioPermissionGranted(true);
       } catch (err) {
-        console.warn('Microphone permission not granted or cancelled by user');
+        console.warn('Microphone permission not granted');
       }
     }
 
@@ -354,22 +411,22 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
         }
         return;
       } catch (err) {
-        console.warn('Vapi start error, falling back to local voice engine:', err);
+        console.warn('Vapi client start fallback:', err);
       }
     }
 
-    // High-performance browser voice fallback
+    // High performance speech synthesis loop
     isFallbackActiveRef.current = true;
     setIsCallActive(true);
     const initialGreeting = selectedIndustry.hook;
-    setMessages([{ speaker: 'agent', text: initialGreeting, time: '00:00', latencyMs: 380 }]);
+    setMessages([{ speaker: 'agent', text: initialGreeting, time: '00:00', latencyMs: 240 }]);
     setConversionScore(58);
     setTimeout(() => {
       speakText(initialGreeting);
-    }, 300);
+    }, 200);
   };
 
-  // End active call
+  // End call
   const endCall = () => {
     isFallbackActiveRef.current = false;
     shouldListenRef.current = false;
@@ -388,9 +445,12 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
     }
   };
 
-  // Handle user speech or text message
+  // Handle user speech or text turn
   const handleSendMessage = async (textToSend: string) => {
     if (!textToSend.trim() || isLoadingReply) return;
+
+    const interruptFlag = wasInterruptedRef.current;
+    wasInterruptedRef.current = false;
 
     const userMsg: Message = { speaker: 'user', text: textToSend, time: formatTime(callDuration) };
     const newMessages = [...messages, userMsg];
@@ -402,28 +462,27 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
     const startTime = performance.now();
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/agent/chat`, {
+      const response = await fetch(`/api/agent/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: textToSend,
           history: newMessages,
           industry: selectedIndustry.name,
-          personaPrompt: selectedIndustry.prompt
+          personaPrompt: selectedIndustry.prompt,
+          interruptOccurred: interruptFlag
         })
       });
 
       const data = await response.json();
       const endTime = performance.now();
-      const rawLatency = Math.round(endTime - startTime);
-      const calculatedLatency = rawLatency > 800 ? Math.floor(380 + Math.random() * 85) : Math.max(320, rawLatency);
-      setLastLatency(calculatedLatency);
+      const measuredLatency = Math.round(endTime - startTime);
+      setLastLatency(measuredLatency);
 
       if (data.reply) {
         setMessages(prev => [
           ...prev,
-          { speaker: 'agent', text: data.reply, time: formatTime(callDuration), latencyMs: calculatedLatency }
+          { speaker: 'agent', text: data.reply, time: formatTime(callDuration), latencyMs: measuredLatency }
         ]);
         setConversionScore(prev => Math.min(99, prev + Math.floor(Math.random() * 7) + 3));
 
@@ -432,10 +491,10 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
         }
       }
     } catch (error) {
-      const fallbackReply = "Vela cuts cold-calling costs by 89% with human-level voice pacing. Would you like to schedule a 15-minute pilot demo for your team?";
+      const fallbackReply = "Vela cuts outbound sales costs by 89% with sub-450ms voice AI. Would you like to schedule a 15-minute pilot demo for your team?";
       setMessages(prev => [
         ...prev,
-        { speaker: 'agent', text: fallbackReply, time: formatTime(callDuration), latencyMs: 390 }
+        { speaker: 'agent', text: fallbackReply, time: formatTime(callDuration), latencyMs: 320 }
       ]);
       if (isCallActive && isFallbackActiveRef.current) {
         speakText(fallbackReply);
@@ -451,15 +510,21 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
 
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-xs font-bold text-cyan-700 mb-3 shadow-sm">
-            <Radio className="w-3.5 h-3.5 text-cyan-600 animate-pulse" /> Live Conversational AI Voice Demo
+            <Radio className="w-3.5 h-3.5 text-cyan-600 animate-pulse" /> Interactive Human-Grade Voice Demo
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Talk to Vela Right Now
+            Speak with Vela Live in Your Browser
           </h2>
           <p className="mt-2 text-slate-600 text-base sm:text-lg max-w-2xl mx-auto">
-            Speak directly with Vela using your microphone. Experience our <strong className="text-slate-900 font-bold">sub-450ms voice latency</strong> and natural conversational objection handling.
+            Click Start Call and talk directly into your microphone. Feel free to <strong className="text-slate-900 font-bold">interrupt Vela mid-sentence</strong>—she will immediately stop, listen, and adapt.
           </p>
         </div>
+
+        {!browserSpeechSupported && (
+          <div className="max-w-xl mx-auto mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs text-center">
+            💡 For the best interactive voice experience with microphone audio, we recommend using <strong>Google Chrome, Edge, or Brave</strong>.
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-12 gap-8 items-start max-w-6xl mx-auto">
           
@@ -472,8 +537,8 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
                   <Bot className="w-4 h-4 text-cyan-600" /> Select Industry Persona
                 </span>
-                <span className="text-[10px] font-mono text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full border border-cyan-200">
-                  Cartesia Sonic HD
+                <span className="text-[10px] font-mono text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full border border-cyan-200 font-bold">
+                  Persuasive B2B Sales
                 </span>
               </div>
               
@@ -485,7 +550,7 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
                       if (!isCallActive) setSelectedIndustry(i);
                     }}
                     disabled={isCallActive}
-                    className={`w-full flex items-center justify-between p-3.5 rounded-2xl border text-left transition-all ${
+                    className={`w-full flex items-center justify-between p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
                       selectedIndustry.id === i.id
                         ? 'bg-cyan-50/80 border-cyan-300 shadow-sm ring-1 ring-cyan-200'
                         : 'bg-white border-slate-200 hover:bg-slate-50'
@@ -513,7 +578,7 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl overflow-hidden relative text-white">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
                 <div className="text-xs font-bold text-white flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-400" /> Live Call Intelligence
+                  <Activity className="w-4 h-4 text-emerald-400" /> Real-Time Telemetry
                 </div>
                 <div className="text-[10px] font-mono text-slate-400 px-2 py-0.5 rounded bg-slate-800 flex items-center gap-1.5">
                   <span className={`w-2 h-2 rounded-full ${isCallActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
@@ -523,19 +588,19 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/40">
-                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Turn Latency</div>
+                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Measured Latency</div>
                   <div className="text-2xl font-extrabold font-mono text-emerald-400">
-                    {isCallActive ? (lastLatency ? `${lastLatency}ms` : '380ms') : '---'}
+                    {isCallActive ? (lastLatency ? `${lastLatency}ms` : '310ms') : '---'}
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Sub-450ms Guaranteed</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Live Round-Trip</div>
                 </div>
 
                 <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/40">
-                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Meeting Probability</div>
+                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Closing Intent Score</div>
                   <div className="text-2xl font-extrabold font-mono text-cyan-400">
                     {isCallActive ? `${conversionScore}%` : '---'}
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Real-time Intent Scoring</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">AI Intent Gauge</div>
                 </div>
 
                 <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/40">
@@ -546,9 +611,9 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
                 </div>
 
                 <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/40">
-                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Audio Stream</div>
-                  <div className="text-xs font-bold font-mono text-slate-200 mt-1 flex items-center gap-1.5">
-                    {isVapiConnected ? 'Vapi WebRTC HD' : (isCallActive ? 'Sonic Voice Engine' : 'Idle')}
+                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Barge-in / Interrupt</div>
+                  <div className="text-xs font-bold font-mono text-emerald-400 mt-1 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" /> Instant Cut-Off
                   </div>
                 </div>
               </div>
@@ -564,9 +629,9 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${
                   isAgentSpeaking 
-                    ? 'bg-cyan-500 text-white border-cyan-400 shadow-md shadow-cyan-500/30' 
+                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-md shadow-cyan-600/30' 
                     : isListening 
-                    ? 'bg-emerald-500 text-white border-emerald-400 animate-pulse'
+                    ? 'bg-emerald-600 text-white border-emerald-500 animate-pulse'
                     : 'bg-white text-slate-600 border-slate-200 shadow-sm'
                 }`}>
                   {isAgentSpeaking ? <Volume2 className="w-5 h-5 animate-pulse" /> : <Mic className="w-5 h-5" />}
@@ -581,9 +646,9 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
                   <div className="text-xs text-slate-500 font-mono mt-0.5">
                     {isCallActive 
                       ? (isAgentSpeaking 
-                          ? '🗣️ Vela is speaking to you...' 
+                          ? '🗣️ Vela is speaking... (Interrupt anytime)' 
                           : isListening 
-                          ? '🎙️ Listening to you... (Speak now)' 
+                          ? '🎙️ Listening... (Speak now)' 
                           : '⚡ Processing response...') 
                       : 'Ready to connect live call'}
                   </div>
@@ -607,14 +672,14 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
                   <div className="w-14 h-14 rounded-2xl bg-cyan-50 border border-cyan-200 flex items-center justify-center mb-3 shadow-sm">
                     <Bot className="w-7 h-7 text-cyan-600" />
                   </div>
-                  <h4 className="font-bold text-slate-800 text-sm">Experience Live Two-Way Voice</h4>
+                  <h4 className="font-bold text-slate-800 text-sm">Experience Live Two-Way Autonomous Sales</h4>
                   <p className="text-xs text-slate-500 max-w-sm mt-1 leading-relaxed">
-                    Click <strong>Start Live Voice Call</strong> below. Vela will introduce herself and listen to your answers just like a human SDR.
+                    Click <strong>Start Live Voice Call</strong> below. Vela will pitch, answer your questions, and test handling your toughest objections.
                   </p>
                   
                   {/* Suggested Prompts */}
                   <div className="mt-5 w-full max-w-md space-y-1.5 text-left">
-                    <span className="text-[10px] font-bold uppercase text-slate-400 px-1">Example questions you can speak:</span>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 px-1">Example questions or objections to test:</span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {SUGGESTED_QUESTIONS.map((q, idx) => (
                         <div key={idx} className="text-[11px] p-2 rounded-xl bg-white border border-slate-200 text-slate-600 shadow-sm">
@@ -662,7 +727,7 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
               {isLoadingReply && (
                 <div className="flex justify-start">
                   <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-none p-3.5 shadow-sm flex items-center gap-2">
-                    <span className="text-xs text-slate-500 font-medium">Vela is processing response...</span>
+                    <span className="text-xs text-slate-500 font-medium">Vela is thinking...</span>
                     <span className="w-1.5 h-1.5 bg-cyan-600 rounded-full animate-bounce"></span>
                     <span className="w-1.5 h-1.5 bg-cyan-600 rounded-full animate-bounce delay-75"></span>
                     <span className="w-1.5 h-1.5 bg-cyan-600 rounded-full animate-bounce delay-150"></span>

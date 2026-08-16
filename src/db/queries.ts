@@ -1,10 +1,11 @@
 import { db } from './index.js';
-import { users, clients, callLogs, leads, talktimeRequests, meetings } from './schema.js';
+import { users, clients, callLogs, leads, talktimeRequests, meetings, adminNotifications } from './schema.js';
 import { eq, desc } from 'drizzle-orm';
 
 export async function getUserByEmail(email: string) {
   try {
-    const result = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+    const cleanEmail = email.toLowerCase().trim();
+    const result = await db.select().from(users).where(eq(users.email, cleanEmail)).limit(1);
     return result[0] || null;
   } catch (error) {
     console.error("Database getUserByEmail failed:", error);
@@ -12,11 +13,22 @@ export async function getUserByEmail(email: string) {
   }
 }
 
+export async function getUserById(uid: string) {
+  try {
+    const result = await db.select().from(users).where(eq(users.uid, uid)).limit(1);
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database getUserById failed:", error);
+    return null;
+  }
+}
+
 export async function createUser(userData: typeof users.$inferInsert) {
   try {
+    const cleanEmail = userData.email.toLowerCase().trim();
     const result = await db.insert(users).values({
       ...userData,
-      email: userData.email.toLowerCase().trim()
+      email: cleanEmail
     }).returning();
     return result[0];
   } catch (error) {
@@ -221,5 +233,38 @@ export async function updateMeetingStatus(meetingId: string, status: string) {
   } catch (error) {
     console.error("Database update meeting status failed:", error);
     throw new Error("Database update meeting status failed.", { cause: error });
+  }
+}
+
+export async function createAdminNotification(notifData: typeof adminNotifications.$inferInsert) {
+  try {
+    const result = await db.insert(adminNotifications).values(notifData).returning();
+    return result[0];
+  } catch (error) {
+    console.error("Database createAdminNotification failed:", error);
+    return null;
+  }
+}
+
+export async function getAdminNotifications() {
+  try {
+    return await db.select().from(adminNotifications).orderBy(desc(adminNotifications.createdAt)).limit(50);
+  } catch (error) {
+    console.error("Database getAdminNotifications failed:", error);
+    return [];
+  }
+}
+
+export async function markAdminNotificationRead(notifId?: string) {
+  try {
+    if (notifId) {
+      await db.update(adminNotifications).set({ read: true }).where(eq(adminNotifications.id, notifId));
+    } else {
+      await db.update(adminNotifications).set({ read: true });
+    }
+    return true;
+  } catch (error) {
+    console.error("Database markAdminNotificationRead failed:", error);
+    return false;
   }
 }

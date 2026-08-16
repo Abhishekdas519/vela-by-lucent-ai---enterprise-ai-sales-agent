@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://wssfeh5xcy7xvm5mdbslzuosee0oymwb.lambda-url.ap-south-1.on.aws/api/$1"
+      "destination": "/api"
     },
     {
       "source": "/(.*)",

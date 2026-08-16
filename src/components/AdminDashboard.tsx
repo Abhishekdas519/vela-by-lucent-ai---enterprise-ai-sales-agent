@@ -52,27 +52,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [twilioNumber, setTwilioNumber] = useState('');
   const [vapiId, setVapiId] = useState('');
   
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem('vela_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as any || {}),
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(url, { ...options, headers });
+  };
+
   const generatePassword = () => {
     return 'VL-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '!' + Math.floor(Math.random() * 99);
   };
   
   const loadCombinedNotifications = () => {
-    fetch('/api/admin/notifications')
+    authFetch('/api/admin/notifications')
       .then(r => r.json())
       .then(data => {
         const apiNotifs = data.data || [];
-        const localNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
-        
-        // Merge without duplicates based on ID
-        const map = new Map();
-        [...localNotifs, ...apiNotifs].forEach(item => {
-          if (!map.has(item.id)) map.set(item.id, item);
-        });
-        setNotifications(Array.from(map.values()));
+        setNotifications(apiNotifs);
       })
       .catch(e => {
-        const localNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
-        setNotifications(localNotifs);
+        console.error('Failed to load notifications:', e);
       });
   };
 
@@ -92,15 +96,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   
   const handleMarkNotificationRead = async (id: string) => {
     try {
-      fetch('/api/admin/notifications/mark-read', {
+      authFetch('/api/admin/notifications/mark-read', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       }).catch(() => {});
-
-      const localNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
-      const updated = localNotifs.map((n: any) => n.id === id ? { ...n, read: true } : n);
-      localStorage.setItem('lucent_admin_notifications', JSON.stringify(updated));
 
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     } catch(e) {}
@@ -108,15 +107,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   
   const handleMarkAllRead = async () => {
     try {
-      fetch('/api/admin/notifications/mark-read', {
+      authFetch('/api/admin/notifications/mark-read', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       }).catch(() => {});
-
-      const localNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
-      const updated = localNotifs.map((n: any) => ({ ...n, read: true }));
-      localStorage.setItem('lucent_admin_notifications', JSON.stringify(updated));
 
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     } catch(e) {}
@@ -124,24 +118,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   React.useEffect(() => {
     if (activeTab === 'leads') {
-      fetch('/api/db/leads').then(r => r.json()).then(data => setLeads(data.data || []));
+      authFetch('/api/db/leads').then(r => r.json()).then(data => setLeads(data.data || []));
     } else if (activeTab === 'orders') {
-      fetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
+      authFetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
     } else if (activeTab === 'meetings') {
-      fetch('/api/meetings').then(r => r.json()).then(data => setMeetings(data.data || []));
+      authFetch('/api/meetings').then(r => r.json()).then(data => setMeetings(data.data || []));
     }
   }, [activeTab]);
 
   const handleApproveOrder = async (orderId: string, clientId: string, minutes: number) => {
     try {
-      const res = await fetch(`/api/db/talktime-requests/${orderId}/approve`, {
+      const res = await authFetch(`/api/db/talktime-requests/${orderId}/approve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, addedMinutes: minutes })
       });
       const result = await res.json();
       if (result.success) {
-        fetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
+        authFetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
         const clientToUpdate = clients.find(c => c.id === clientId);
         if (clientToUpdate) {
           onUpdateClient({
@@ -151,31 +144,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
         alert(`✅ Order approved! ${minutes.toLocaleString()} minutes credited.`);
       } else {
-        alert('Order approved (DB may be cold starting).');
+        alert('Failed to approve order: ' + (result.error || 'Unknown error'));
       }
-    } catch (e) {
-      alert('Order approved (offline mode).');
+    } catch (e: any) {
+      alert('Failed to approve order: ' + e.message);
     }
   };
 
   const handleRejectOrder = async (orderId: string) => {
     try {
-      await fetch(`/api/db/talktime-requests/${orderId}/reject`, { method: 'POST' });
-      fetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
+      await authFetch(`/api/db/talktime-requests/${orderId}/reject`, { method: 'POST' });
+      authFetch('/api/db/talktime-requests').then(r => r.json()).then(data => setOrders(data.data || []));
       alert('Order rejected.');
-    } catch (e) {
-      alert('Order rejected (offline mode).');
+    } catch (e: any) {
+      alert('Error rejecting order: ' + e.message);
     }
   };
 
   const handleConfirmMeeting = async (meetingId: string, status: string) => {
     try {
-      await fetch(`/api/meetings/${meetingId}/status`, {
+      await authFetch(`/api/meetings/${meetingId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
       });
-      fetch('/api/meetings').then(r => r.json()).then(data => setMeetings(data.data || []));
+      authFetch('/api/meetings').then(r => r.json()).then(data => setMeetings(data.data || []));
     } catch (e) {}
   };
 
@@ -278,9 +270,8 @@ CEO`);
   const handleGeneratePromptWithAI = async () => {
     setIsGeneratingPrompt(true);
     try {
-      const response = await fetch('/api/prompts/generate', {
+      const response = await authFetch('/api/prompts/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyName: newCompanyName || 'Enterprise Client',
           industry: newIndustry,
@@ -341,19 +332,18 @@ CEO`);
     };
 
     try {
-      const response = await fetch('/api/db/clients', {
+      const response = await authFetch('/api/db/clients', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newClient),
       });
       if (response.ok) {
         const data = await response.json();
         onAddNewClient(data.data || newClient);
       } else {
-        onAddNewClient(newClient); // Fallback to local state if DB fails
+        onAddNewClient(newClient);
       }
     } catch (err) {
-      console.error('Failed to save to DB, using local state:', err);
+      console.error('Failed to save client to DB:', err);
       onAddNewClient(newClient);
     }
 
