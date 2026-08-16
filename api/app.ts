@@ -47,6 +47,11 @@ import {
   markAdminNotificationRead
 } from '../src/db/queries.js';
 
+// Google Search Console Verification
+app.get('/googlea3f6cf47ad351984.html', (req, res) => {
+  res.type('text/html').send('google-site-verification: googlea3f6cf47ad351984.html');
+});
+
 // ============================================================================
 // 1. AUTHENTICATION & ONBOARDING
 // ============================================================================
