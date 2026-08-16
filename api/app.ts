@@ -142,18 +142,26 @@ Handle objections gracefully, explain your capabilities if asked, and invite the
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     });
   } catch (_error) {
-    // Dynamic smart responses based on user query
+    // Highly consultative, dynamic smart responses based on user query
     const lower = userMsg.toLowerCase();
-    let reply = "I am Vela, Lucent AI's autonomous sales voice agent. I can dial thousands of qualified leads daily, handle complex objections, and book meetings directly to your calendar.";
+    let reply = "I'm Vela from Lucent AI. We automate high-volume B2B outreach with sub-450ms voice, qualify prospects, and book discovery meetings straight to your calendar. How many leads does your team dial each month?";
     
-    if (lower.includes('price') || lower.includes('cost') || lower.includes('cheap') || lower.includes('competitor')) {
-      reply = "Our pricing is guaranteed 10% lower than traditional call centers and competing voice platforms, starting from just $0.09 per minute with zero setup fees and immediate Stripe top-up.";
-    } else if (lower.includes('crm') || lower.includes('hubspot') || lower.includes('salesforce') || lower.includes('integrate')) {
-      reply = "Vela provides seamless bidirectional integration with HubSpot, Salesforce, Supabase, and custom REST webhooks to push transcripts and conversion scores instantly.";
-    } else if (lower.includes('latency') || lower.includes('vapi') || lower.includes('voice') || lower.includes('fast')) {
-      reply = "With our Vapi and Twilio SIP infrastructure, our voice pipeline operates under 450 milliseconds, creating completely natural human-grade phone conversations with zero awkward pauses.";
-    } else if (lower.includes('follow') || lower.includes('email') || lower.includes('12')) {
-      reply = "Right after each call concludes, Vela synthesizes a tailored email or SMS draft and automatically triggers the follow-up 12 hours later to maximize conversion rates.";
+    if (lower.includes('price') || lower.includes('cost') || lower.includes('cheap') || lower.includes('rate') || lower.includes('much')) {
+      reply = "Our plans start at just $299 per month for 2,000 minutes, which is 10% lower than traditional call centers and BPOs. Would you like to test a batch of 50 dials on our starter pilot?";
+    } else if (lower.includes('crm') || lower.includes('hubspot') || lower.includes('salesforce') || lower.includes('integrate') || lower.includes('tool')) {
+      reply = "Yes! Vela syncs bidirectionally with Salesforce, HubSpot, Supabase, and REST webhooks. We push call recordings, transcripts, and conversion scores into your pipeline in real time.";
+    } else if (lower.includes('latency') || lower.includes('vapi') || lower.includes('voice') || lower.includes('fast') || lower.includes('delay')) {
+      reply = "We stream audio at sub-450ms latency using Cartesia Sonic HD and Deepgram Nova-2. It feels completely natural with zero awkward pauses, just like speaking with a human rep.";
+    } else if (lower.includes('human') || lower.includes('sdr') || lower.includes('replace') || lower.includes('team') || lower.includes('rep')) {
+      reply = "A single Vela agent handles up to 50 concurrent lines simultaneously, doing the work of 15 full-time SDRs at less than 10% of the cost. Would you like to schedule a 15-minute strategy walkthrough?";
+    } else if (lower.includes('logistics') || lower.includes('freight') || lower.includes('truck') || lower.includes('carrier') || lower.includes('ltl')) {
+      reply = "For logistics, Vela qualifies shippers on lane volume and equipment type, cutting quote turnaround from 20 minutes to 45 seconds. We can launch your custom freight campaign in under 3 minutes.";
+    } else if (lower.includes('saas') || lower.includes('software') || lower.includes('demo') || lower.includes('b2b')) {
+      reply = "For SaaS, Vela dials ICP contact lists, navigates gatekeepers, handles pricing objections, and books demos straight to your account executive's calendar. Are you ready to see a live batch run?";
+    } else if (lower.includes('yes') || lower.includes('sure') || lower.includes('schedule') || lower.includes('book') || lower.includes('try') || lower.includes('pilot')) {
+      reply = "Awesome! Click 'Book a Live Demo' on the page or sign up for instant access. I'll have your custom telephony line and voice persona provisioned in minutes.";
+    } else if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey') || lower.includes('who are you')) {
+      reply = "Hi there! I'm Vela. I'm an autonomous B2B sales voice agent. I can dial leads, answer technical questions, and book qualified meetings. What industry does your company serve?";
     }
 
     res.json({
