@@ -1,0 +1,11 @@
+# Robots.txt for Vela by Lucent AI (velabylucentai.in)
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+
+# Host
+Host: https://velabylucentai.in
+
+# Sitemaps
+Sitemap: https://velabylucentai.in/sitemap.xml

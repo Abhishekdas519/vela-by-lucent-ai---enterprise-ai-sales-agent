@@ -23,6 +23,7 @@ import { ComingSoonChannels } from './components/ComingSoonChannels';
 import { PortalLoginPage } from './components/PortalLoginPage';
 import { ClientDashboard } from './components/ClientDashboard';
 import { MeetingScheduler } from './components/MeetingScheduler';
+import { FAQSection } from './components/FAQSection';
 import {
   ShieldCheck,
   Zap,
@@ -383,6 +384,9 @@ export default function App() {
                 onSelectPlan={handleSelectPlan}
               />
             </div>
+
+            {/* SEO FAQ Accordion */}
+            <FAQSection />
 
             {/* Embedded Strategy Session Booking Section */}
             <section id="scheduler-section" className="py-24 bg-slate-900 text-white border-t border-slate-800 relative overflow-hidden">
