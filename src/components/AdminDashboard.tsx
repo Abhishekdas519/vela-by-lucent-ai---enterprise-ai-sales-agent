@@ -399,7 +399,7 @@ CEO`);
               <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
               <span>Lucent AI Master Administration Suite</span>
             </div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
               Client Fleet & Telephony Management
             </h1>
             <p className="text-xs text-slate-500">
@@ -531,7 +531,7 @@ CEO`);
             <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
               <Users className="w-4 h-4 text-cyan-600" /> Total Active Clients
             </span>
-            <span className="text-3xl font-extrabold text-white font-mono">{totalClients}</span>
+            <span className="text-3xl font-extrabold text-slate-900 font-mono">{totalClients}</span>
             <span className="text-[11px] text-emerald-600 font-semibold block">All Fleets Operational</span>
           </div>
 
@@ -584,7 +584,7 @@ CEO`);
         <div className="rounded-3xl bg-white/80 border border-slate-200 shadow-xl overflow-hidden space-y-4 p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-white">Client Accounts & Telephony Routing</h2>
+              <h2 className="text-lg font-bold text-slate-900">Client Accounts & Telephony Routing</h2>
               <p className="text-xs text-slate-500">Click any client to switch directly to their portal view or manage Vapi & Twilio settings.</p>
             </div>
 
@@ -595,7 +595,7 @@ CEO`);
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search clients, phone, or industry..."
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
               />
             </div>
           </div>
@@ -622,7 +622,7 @@ CEO`);
                   return (
                     <tr key={client.id} className="hover:bg-slate-50/60 transition">
                       <td className="p-3.5">
-                        <div className="font-bold text-white text-sm">{client.companyName}</div>
+                        <div className="font-bold text-slate-900 text-sm">{client.companyName}</div>
                         <div className="text-[11px] text-slate-500">{client.contactName} • {client.email}</div>
                       </td>
 
@@ -817,7 +817,7 @@ CEO`);
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Server className="w-5 h-5 text-cyan-600" />
-              <h3 className="text-base font-bold text-white">Global Integration & API Gateways</h3>
+              <h3 className="text-base font-bold text-slate-900">Global Integration & API Gateways</h3>
             </div>
             <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-600 border border-emerald-500/30 font-mono">
               Live Synchronized
@@ -944,7 +944,7 @@ CEO`);
             <button
               id="btn-close-admin-wizard"
               onClick={() => setIsOnboardingOpen(false)}
-              className="absolute top-5 right-5 p-2 rounded-full text-slate-500 hover:text-white hover:bg-slate-100 transition"
+              className="absolute top-5 right-5 p-2 rounded-full text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
             >
               <X className="w-5 h-5" />
             </button>
@@ -955,7 +955,7 @@ CEO`);
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>AI-Assisted Client Provisioning Wizard</span>
               </div>
-              <h2 className="text-2xl font-extrabold text-white">Onboard New Enterprise Client</h2>
+              <h2 className="text-2xl font-extrabold text-slate-900">Onboard New Enterprise Client</h2>
               <p className="text-xs text-slate-500">Step {step} of 4: Configure profile, synthesize scripts, provision virtual DID, and setup billing.</p>
             </div>
 
@@ -979,7 +979,7 @@ CEO`);
                       value={newCompanyName}
                       onChange={(e) => setNewCompanyName(e.target.value)}
                       placeholder="e.g. Apex Cloud Logistics"
-                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                     />
                   </div>
 
@@ -991,7 +991,7 @@ CEO`);
                       value={newContactName}
                       onChange={(e) => setNewContactName(e.target.value)}
                       placeholder="e.g. Marcus Sterling"
-                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                     />
                   </div>
                 </div>
@@ -1005,7 +1005,7 @@ CEO`);
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
                       placeholder="marcus@apexlogistics.io"
-                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                     />
                   </div>
 
@@ -1014,7 +1014,7 @@ CEO`);
                     <select
                       value={newIndustry}
                       onChange={(e) => setNewIndustry(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white focus:outline-none focus:border-cyan-500"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-cyan-500"
                     >
                       <option value="Logistics & Freight Brokerage">Logistics & Freight Brokerage</option>
                       <option value="B2B Software & SaaS">B2B Software & SaaS</option>
@@ -1099,7 +1099,7 @@ CEO`);
                     type="text"
                     value={targetAudience}
                     onChange={(e) => setTargetAudience(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
 
@@ -1109,7 +1109,7 @@ CEO`);
                     type="text"
                     value={firstMessage}
                     onChange={(e) => setFirstMessage(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
 
@@ -1119,7 +1119,7 @@ CEO`);
                     rows={5}
                     value={systemPrompt}
                     onChange={(e) => setSystemPrompt(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:border-cyan-500"
                   />
                 </div>
 
@@ -1235,7 +1235,7 @@ CEO`);
                       max="50"
                       value={activeLines}
                       onChange={(e) => setActiveLines(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:border-cyan-500"
                     />
                   </div>
                 </div>
@@ -1247,7 +1247,7 @@ CEO`);
                       type="time"
                       value={callingStart}
                       onChange={(e) => setCallingStart(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white focus:outline-none focus:border-cyan-500"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-cyan-500"
                     />
                   </div>
 
@@ -1257,7 +1257,7 @@ CEO`);
                       type="time"
                       value={callingEnd}
                       onChange={(e) => setCallingEnd(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white focus:outline-none focus:border-cyan-500"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-cyan-500"
                     />
                   </div>
                 </div>
@@ -1342,7 +1342,7 @@ CEO`);
                     placeholder="cus_xxxxxxxxxxxxx (We will connect Stripe API later)"
                     value={stripeCustomerId}
                     onChange={(e) => setStripeCustomerId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-white focus:outline-none focus:border-cyan-500 placeholder-slate-600"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-cyan-500 placeholder-slate-400"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">
                     * Payment gateway integration placeholder. You can link this later via Stripe webhook.

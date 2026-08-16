@@ -61,13 +61,21 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    fetch('/api/vapi-config')
+    fetch('/api/vapi/config')
       .then(res => res.json())
       .then(data => {
         if (data?.publicKey) setVapiPublicKey(data.publicKey);
         if (data?.defaultAssistantId) setVapiAssistantId(data.defaultAssistantId);
       })
-      .catch(() => {});
+      .catch(() => {
+        fetch('/api/vapi-config')
+          .then(res => res.json())
+          .then(data => {
+            if (data?.publicKey) setVapiPublicKey(data.publicKey);
+            if (data?.defaultAssistantId) setVapiAssistantId(data.defaultAssistantId);
+          })
+          .catch(() => {});
+      });
   }, []);
 
   useEffect(() => {
@@ -161,28 +169,33 @@ export const LiveVoiceDemo: React.FC<{ onOpenSignUp: () => void }> = ({ onOpenSi
   };
 
   const startBrowserListening = () => {
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) return;
     
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      if (transcript.trim()) {
-        handleSendMessage(transcript);
-      }
-    };
-    recognition.onerror = () => setIsListening(false);
-    
-    recognitionRef.current = recognition;
     try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (e) {}
+      }
+      const recognition = new SpeechRec();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0]?.[0]?.transcript;
+        if (transcript && transcript.trim()) {
+          handleSendMessage(transcript);
+        }
+      };
+      recognition.onerror = () => setIsListening(false);
+      
+      recognitionRef.current = recognition;
       recognition.start();
-    } catch (e) {}
+    } catch (e) {
+      setIsListening(false);
+    }
   };
 
   const startCall = async () => {

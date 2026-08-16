@@ -264,7 +264,7 @@ Generate a realistic 4-to-6 turn phone dialog transcript, followed by a structur
 });
 
 // Vapi Public Config for Web SDK
-app.get('/api/vapi/config', (req, res) => {
+app.get(['/api/vapi/config', '/api/vapi-config'], (req, res) => {
   res.json({
     publicKey: process.env.VAPI_PUBLIC_KEY || null,
     defaultAssistantId: process.env.VAPI_ASSISTANT_ID || null,
