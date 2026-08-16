@@ -74,10 +74,25 @@ export default function App() {
   const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
   const [isPortalRoute, setIsPortalRoute] = useState(false);
 
-  // Sync to local storage
+  // Sync to local storage & load live database clients
   useEffect(() => {
     localStorage.setItem('vela_clients', JSON.stringify(clients));
   }, [clients]);
+
+  useEffect(() => {
+    // Fetch live clients from Supabase database
+    fetch('/api/db/clients')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.success && Array.isArray(data.data) && data.data.length > 0) {
+          setClients(data.data);
+          if (!activeClient || activeClient.id === 'client-1') {
+            setActiveClient(data.data[0]);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('vela_leads', JSON.stringify(leads));
@@ -113,27 +128,34 @@ export default function App() {
     }
 
     const handlePopState = () => {
-      if (window.location.pathname === '/login') setCurrentView('portal_login');
-      else if (window.location.pathname === '/') setCurrentView('landing');
+      if (window.location.pathname === '/login' || window.location.pathname === '/admin' || window.location.pathname === '/portal') {
+        if (currentUser) {
+          setCurrentView(currentUser.role === 'admin' ? 'admin_dashboard' : 'client_dashboard');
+        } else {
+          setCurrentView('portal_login');
+        }
+      } else if (window.location.pathname === '/') {
+        setCurrentView('landing');
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [currentUser]);
 
   // Auth Callbacks
-  const handleLoginSuccess = (user: User) => {
+  const handleLoginSuccess = (user: User, client?: ClientProfile) => {
     setCurrentUser(user);
     if (user.role === 'admin') {
       setCurrentView('admin_dashboard');
     } else {
-      const matchedClient = clients.find(c => c.id === user.clientId) || clients[0];
+      const matchedClient = client || clients.find(c => c.id === user.clientId) || clients[0];
       setActiveClient(matchedClient);
       setCurrentView('client_dashboard');
     }
   };
 
   const handleSignUpSuccess = (newClient: ClientProfile, newUser: User) => {
-    const updatedClients = [newClient, ...clients];
+    const updatedClients = [newClient, ...clients.filter(c => c.id !== newClient.id)];
     setClients(updatedClients);
     setActiveClient(newClient);
     setCurrentUser(newUser);

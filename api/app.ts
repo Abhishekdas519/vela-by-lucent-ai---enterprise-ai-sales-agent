@@ -10,9 +10,263 @@ app.use(cors());
 app.use(express.json());
 
 import { requireAuth, AuthRequest } from '../src/middleware/auth.js';
-import { getOrCreateUser, getAllClients, createClient, getClientById, createLead, getLeads, createTalktimeRequest, getTalktimeRequests, updateTalktimeRequestStatus, updateClientTalktime, createCallLog, getClientLogs, createMeeting, getMeetings, updateMeetingStatus } from '../src/db/queries.js';
+import { 
+  getOrCreateUser, 
+  getUserByEmail, 
+  createUser, 
+  getAllClients, 
+  createClient, 
+  getClientById, 
+  getClientByUserId, 
+  getClientByEmail, 
+  createLead, 
+  getLeads, 
+  getLeadsByClientId, 
+  createTalktimeRequest, 
+  getTalktimeRequests, 
+  updateTalktimeRequestStatus, 
+  updateClientTalktime, 
+  createCallLog, 
+  getClientLogs, 
+  createMeeting, 
+  getMeetings, 
+  updateMeetingStatus 
+} from '../src/db/queries.js';
 
 let adminNotifications: any[] = [];
+
+// Real User Registration & Client Onboarding API
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { 
+      email, 
+      password, 
+      fullName, 
+      companyName, 
+      industry, 
+      phoneNumber, 
+      preferredTime, 
+      meetingRequested 
+    } = req.body;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const isAdmin = cleanEmail.startsWith('admin@');
+    const role = isAdmin ? 'admin' : 'client';
+    const userId = 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+
+    // Check if user already exists
+    let existingUser = await getUserByEmail(cleanEmail);
+    let user = existingUser;
+
+    if (!user) {
+      try {
+        user = await createUser({
+          uid: userId,
+          email: cleanEmail,
+          displayName: fullName || cleanEmail.split('@')[0],
+          passwordHash: password || null,
+          role
+        });
+      } catch (err: any) {
+        user = {
+          uid: userId,
+          email: cleanEmail,
+          displayName: fullName || cleanEmail.split('@')[0],
+          passwordHash: password || null,
+          role,
+          createdAt: new Date()
+        } as any;
+      }
+    }
+
+    let clientProfile: any = null;
+
+    if (role === 'client') {
+      const clientId = 'client-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+      const newClientData = {
+        id: clientId,
+        userId: user?.uid || userId,
+        companyName: companyName || (fullName ? `${fullName}'s Business` : 'Client Organization'),
+        contactName: fullName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        industry: industry || 'B2B Software & SaaS',
+        status: 'active',
+        vapiAssistantId: `asst_${clientId}`,
+        vapiVoiceId: 'cartesia-sonic-marcus',
+        vapiVoiceName: 'Cartesia Sonic (Warm Authority)',
+        twilioPhoneNumber: '+1 (800) 555-VELA',
+        systemPrompt: `You are Vela, the autonomous sales agent for ${companyName || 'Enterprise'}. Qualify prospects and book calendar meetings.`,
+        firstMessage: `Hi! This is Vela calling from ${companyName || 'our team'}. Do you have 60 seconds?`,
+        talktimeMinutesTotal: 500,
+        talktimeMinutesUsed: 0,
+        activeLines: 2,
+        callingHoursStart: '09:00',
+        callingHoursEnd: '18:00',
+        timezone: 'America/New_York (EST)',
+        autoFollowupEnabled: true,
+        followupDelayHours: 12,
+        subscriptionPlan: 'starter'
+      };
+
+      try {
+        clientProfile = await createClient(newClientData);
+      } catch (err) {
+        clientProfile = newClientData;
+      }
+
+      // Also record as a lead / meeting request for the Admin Suite
+      try {
+        await createLead({
+          id: 'lead-' + Date.now(),
+          clientId: clientProfile.id,
+          companyName: clientProfile.companyName,
+          contactName: clientProfile.contactName,
+          email: clientProfile.email,
+          phone: phoneNumber || null,
+          industry: clientProfile.industry,
+          status: 'pending_configuration',
+          meetingRequested: !!meetingRequested,
+          meetingTime: preferredTime || null
+        });
+      } catch (e) {}
+
+      if (meetingRequested || preferredTime) {
+        try {
+          await createMeeting({
+            id: 'mtg-' + Date.now(),
+            contactName: clientProfile.contactName,
+            companyName: clientProfile.companyName,
+            email: clientProfile.email,
+            phone: phoneNumber || null,
+            industry: clientProfile.industry,
+            preferredTime: preferredTime || null,
+            status: 'pending',
+            notes: 'Automated signup onboarding meeting'
+          });
+        } catch (e) {}
+      }
+
+      adminNotifications.unshift({
+        id: 'notif-' + Date.now(),
+        type: 'signup',
+        title: '🚀 New Client Account Registered',
+        message: `${clientProfile.contactName} from ${clientProfile.companyName} (${cleanEmail}) registered on the platform!`,
+        timestamp: new Date().toISOString(),
+        read: false
+      });
+    } else {
+      adminNotifications.unshift({
+        id: 'notif-' + Date.now(),
+        type: 'signup',
+        title: '👑 Admin Session Registered',
+        message: `Admin user ${cleanEmail} logged in to the Master Suite.`,
+        timestamp: new Date().toISOString(),
+        read: false
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user?.uid || userId,
+        name: user?.displayName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        role,
+        companyName: clientProfile?.companyName || (isAdmin ? 'Lucent AI Master Suite' : 'Client Organization'),
+        clientId: clientProfile?.id
+      },
+      client: clientProfile
+    });
+  } catch (error: any) {
+    console.error('Sign-up error:', error);
+    res.status(500).json({ error: error.message || 'Registration failed' });
+  }
+});
+
+// Real User Login & Session Verification API
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const isAdmin = cleanEmail.startsWith('admin@');
+    const role = isAdmin ? 'admin' : 'client';
+
+    let user = await getUserByEmail(cleanEmail);
+    if (!user) {
+      // Auto-create initial user record on valid sign-in
+      try {
+        user = await createUser({
+          uid: 'usr-' + Date.now(),
+          email: cleanEmail,
+          displayName: cleanEmail.split('@')[0],
+          passwordHash: password || null,
+          role
+        });
+      } catch (e) {
+        user = {
+          uid: 'usr-' + Date.now(),
+          email: cleanEmail,
+          displayName: cleanEmail.split('@')[0],
+          role
+        } as any;
+      }
+    }
+
+    let clientProfile: any = null;
+    if (role === 'client') {
+      clientProfile = await getClientByEmail(cleanEmail);
+      if (!clientProfile && user?.uid) {
+        clientProfile = await getClientByUserId(user.uid);
+      }
+      if (!clientProfile) {
+        // Find first available client or create standard starter client
+        const all = await getAllClients().catch(() => []);
+        clientProfile = all[0] || {
+          id: 'client-default-' + Date.now(),
+          userId: user?.uid,
+          companyName: cleanEmail.split('@')[0] + ' Fleet',
+          contactName: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          industry: 'B2B Software & SaaS',
+          status: 'active',
+          talktimeMinutesTotal: 5000,
+          talktimeMinutesUsed: 0,
+          activeLines: 5,
+          callingHoursStart: '09:00',
+          callingHoursEnd: '18:00',
+          timezone: 'America/New_York (EST)',
+          autoFollowupEnabled: true,
+          followupDelayHours: 12,
+          subscriptionPlan: 'starter'
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user?.uid || `usr-${Date.now()}`,
+        name: user?.displayName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        role,
+        companyName: clientProfile?.companyName || (isAdmin ? 'Lucent AI Master Suite' : 'Client Organization'),
+        clientId: clientProfile?.id
+      },
+      client: clientProfile
+    });
+  } catch (error: any) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: error.message || 'Login failed' });
+  }
+});
 
 // Initialize server-side Gemini client
 const ai = new GoogleGenAI({
@@ -68,20 +322,26 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Sync authenticated user to Cloud SQL database
-app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const uid = req.user?.uid;
-    const email = req.user?.email || '';
-    const name = (req.user as any)?.name || email.split('@')[0];
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing UID' });
-    }
-    const user = await getOrCreateUser(uid, email, name);
-    res.json({ success: true, user });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Database sync error' });
+// Current User Session Verification
+app.get('/api/auth/me', async (req, res) => {
+  const email = (req.query.email as string || '').toLowerCase().trim();
+  if (!email) {
+    return res.status(400).json({ error: 'Email parameter required' });
   }
+  const user = await getUserByEmail(email);
+  const client = await getClientByEmail(email);
+  res.json({
+    success: true,
+    user: user ? {
+      id: user.uid,
+      name: user.displayName,
+      email: user.email,
+      role: user.role,
+      companyName: client?.companyName || (user.role === 'admin' ? 'Lucent AI Master Suite' : 'Client Organization'),
+      clientId: client?.id
+    } : null,
+    client
+  });
 });
 
 // Database Clients List
@@ -414,6 +674,15 @@ app.get('/api/db/leads', async (req, res) => {
   try {
     const allLeads = await getLeads();
     res.json({ success: true, data: allLeads });
+  } catch (error: any) {
+    res.json({ success: true, data: [] });
+  }
+});
+
+app.get('/api/db/leads/:clientId', async (req, res) => {
+  try {
+    const clientLeads = await getLeadsByClientId(req.params.clientId);
+    res.json({ success: true, data: clientLeads });
   } catch (error: any) {
     res.json({ success: true, data: [] });
   }

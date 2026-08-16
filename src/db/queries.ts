@@ -2,19 +2,72 @@ import { db } from './index.js';
 import { users, clients, callLogs, leads, talktimeRequests, meetings } from './schema.js';
 import { eq, desc } from 'drizzle-orm';
 
+export async function getUserByEmail(email: string) {
+  try {
+    const result = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database getUserByEmail failed:", error);
+    return null;
+  }
+}
+
+export async function createUser(userData: typeof users.$inferInsert) {
+  try {
+    const result = await db.insert(users).values({
+      ...userData,
+      email: userData.email.toLowerCase().trim()
+    }).returning();
+    return result[0];
+  } catch (error) {
+    console.error("Database createUser failed:", error);
+    throw new Error("Database createUser failed.", { cause: error });
+  }
+}
+
+export async function getClientByUserId(userId: string) {
+  try {
+    const result = await db.select().from(clients).where(eq(clients.userId, userId)).limit(1);
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database getClientByUserId failed:", error);
+    return null;
+  }
+}
+
+export async function getClientByEmail(email: string) {
+  try {
+    const result = await db.select().from(clients).where(eq(clients.email, email.toLowerCase().trim())).limit(1);
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database getClientByEmail failed:", error);
+    return null;
+  }
+}
+
+export async function getLeadsByClientId(clientId: string) {
+  try {
+    return await db.select().from(leads).where(eq(leads.clientId, clientId)).orderBy(desc(leads.createdAt));
+  } catch (error) {
+    console.error("Database getLeadsByClientId failed:", error);
+    return [];
+  }
+}
+
 export async function getOrCreateUser(uid: string, email: string, displayName?: string) {
   try {
+    const cleanEmail = email.toLowerCase().trim();
     const result = await db.insert(users)
       .values({
         uid,
-        email,
-        displayName: displayName || email.split('@')[0],
+        email: cleanEmail,
+        displayName: displayName || cleanEmail.split('@')[0],
       })
       .onConflictDoUpdate({
         target: users.uid,
         set: {
-          email,
-          displayName: displayName || email.split('@')[0],
+          email: cleanEmail,
+          displayName: displayName || cleanEmail.split('@')[0],
         },
       })
       .returning();

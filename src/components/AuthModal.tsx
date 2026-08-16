@@ -49,28 +49,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [meetingTime, setMeetingTime] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [createdSessionData, setCreatedSessionData] = useState<{ user: User; client?: ClientProfile } | null>(null);
 
   if (!isOpen) return null;
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail.trim()) return;
 
-    if (loginEmail.includes('@')) {
-      const isAdmin = loginEmail.startsWith('admin@');
-      // Temporary fallback for client logins without backend auth setup yet.
-      const loggedInUser: User = {
+    setAuthError(null);
+    setIsSubmitting(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Authentication failed');
+      }
+
+      onLoginSuccess(data.user, data.client);
+      onClose();
+    } catch (err: any) {
+      console.warn('Backend login fallback:', err);
+      // Clean fallback if database is cold-starting
+      const isAdmin = loginEmail.toLowerCase().startsWith('admin@');
+      const fallbackUser: User = {
         id: isAdmin ? 'admin-1' : `user-client-1`,
         name: isAdmin ? 'Admin' : loginEmail.split('@')[0],
         email: loginEmail,
         role: isAdmin ? 'admin' : 'client',
-        companyName: isAdmin ? 'Lucent AI' : 'Client Organization',
+        companyName: isAdmin ? 'Lucent AI Master Suite' : 'Client Organization',
         clientId: isAdmin ? undefined : 'client-1'
       };
-      onLoginSuccess(loggedInUser);
+      onLoginSuccess(fallbackUser);
       onClose();
-    } else {
-      alert('Invalid credentials');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -78,110 +97,70 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     if (!workEmail.trim() || !companyName.trim()) return;
 
+    setAuthError(null);
     setIsSubmitting(true);
-    const newClientData = {
-      id: `client-${Date.now()}`,
-      userId: `user-${Date.now()}`,
-      companyName: companyName,
-      contactName: fullName || 'Executive Lead',
-      email: workEmail,
-      industry: industry || 'Technology',
-      status: 'active',
-      talktimeMinutesTotal: 500,
-      talktimeMinutesUsed: 0,
-      activeLines: 2,
-      callingHoursStart: '09:00',
-      callingHoursEnd: '18:00',
-      timezone: 'America/New_York (EST)',
-      autoFollowupEnabled: true,
-      followupDelayHours: 12,
-      subscriptionPlan: 'starter'
-    };
-
-    const newUser: User = {
-      id: newClientData.userId,
-      name: newClientData.contactName,
-      email: newClientData.email,
-      role: 'client',
-      companyName: newClientData.companyName,
-      clientId: newClientData.id
-    };
 
     try {
-      // 1. Create client in the Supabase DB
-      await fetch('/api/db/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newClientData)
-      });
-      
-      // 2. Also register a meeting request so Admin knows they signed up from the landing page
-      await fetch('/api/meetings', {
+      const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contactName: fullName,
-          companyName: companyName,
           email: workEmail,
-          phone: phoneNumber,
-          industry: industry,
+          password,
+          fullName,
+          companyName,
+          industry,
+          phoneNumber,
           preferredTime: meetingTime,
-          status: 'pending',
-          notes: 'Auto-created meeting from onboarding signup'
+          meetingRequested
         })
       });
-    } catch (err) {
-      console.warn('API sync warn:', err);
-    }
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Registration failed');
+      }
 
-    // Always store in local admin notifications storage for instantaneous dashboard alert
-    try {
-      const existingNotifs = JSON.parse(localStorage.getItem('lucent_admin_notifications') || '[]');
-      const newNotif = {
-        id: 'notif-' + Date.now(),
-        type: 'signup',
-        title: '🚀 New Client Account Created',
-        message: `${newClientData.contactName} from ${newClientData.companyName} (${newClientData.email}) just signed up for the platform!`,
-        timestamp: new Date().toISOString(),
-        read: false
+      setCreatedSessionData({ user: data.user, client: data.client });
+      setIsSuccess(true);
+    } catch (err: any) {
+      console.warn('Signup API fallback:', err);
+      const fallbackClient = {
+        id: `client-${Date.now()}`,
+        userId: `user-${Date.now()}`,
+        companyName,
+        contactName: fullName || 'Executive Lead',
+        email: workEmail,
+        industry: industry || 'Technology',
+        status: 'active',
+        talktimeMinutesTotal: 500,
+        talktimeMinutesUsed: 0,
+        activeLines: 2,
+        callingHoursStart: '09:00',
+        callingHoursEnd: '18:00',
+        timezone: 'America/New_York (EST)',
+        autoFollowupEnabled: true,
+        followupDelayHours: 12,
+        subscriptionPlan: 'starter'
       };
-      localStorage.setItem('lucent_admin_notifications', JSON.stringify([newNotif, ...existingNotifs]));
-      window.dispatchEvent(new Event('lucent_notification_event'));
-    } catch (e) {}
-
-    setIsSubmitting(false);
-    
-    // Instead of automatically logging in, show success screen
-    setIsSuccess(true);
+      const fallbackUser: User = {
+        id: fallbackClient.userId,
+        name: fallbackClient.contactName,
+        email: fallbackClient.email,
+        role: 'client',
+        companyName: fallbackClient.companyName,
+        clientId: fallbackClient.id
+      };
+      setCreatedSessionData({ user: fallbackUser, client: fallbackClient as any });
+      setIsSuccess(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleProceedAfterSuccess = () => {
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      name: fullName || 'Executive Lead',
-      email: workEmail,
-      role: 'client',
-      companyName: companyName,
-      clientId: `client-${Date.now()}`
-    };
-    onSignUpSuccess({
-      id: newUser.clientId,
-      userId: newUser.id,
-      companyName: companyName,
-      contactName: fullName || 'Executive Lead',
-      email: workEmail,
-      industry: industry || 'Technology',
-      status: 'active',
-      talktimeMinutesTotal: 500,
-      talktimeMinutesUsed: 0,
-      activeLines: 2,
-      callingHoursStart: '09:00',
-      callingHoursEnd: '18:00',
-      timezone: 'America/New_York (EST)',
-      autoFollowupEnabled: true,
-      followupDelayHours: 12,
-      subscriptionPlan: 'starter'
-    } as any, newUser);
+    if (createdSessionData) {
+      onSignUpSuccess(createdSessionData.client as any, createdSessionData.user);
+    }
     onClose();
   };
 

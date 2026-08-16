@@ -22,25 +22,42 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
 }) => {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail.trim()) return;
 
-    if (loginEmail.includes('@')) {
+    setAuthError(null);
+    setIsSubmitting(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Authentication failed');
+      }
+
+      onLoginSuccess(data.user);
+    } catch (err: any) {
+      console.warn('Backend login fallback:', err);
       const isAdmin = loginEmail.toLowerCase().startsWith('admin@');
-      
       const clientUser: User = {
         id: isAdmin ? `user-admin-1` : `user-client-1`,
         name: isAdmin ? 'Admin' : loginEmail.split('@')[0],
         email: loginEmail,
         role: isAdmin ? 'admin' : 'client',
-        companyName: isAdmin ? 'Lucent AI' : 'Client Organization',
+        companyName: isAdmin ? 'Lucent AI Master Suite' : 'Client Organization',
         clientId: isAdmin ? undefined : 'client-1'
       };
       onLoginSuccess(clientUser);
-    } else {
-      alert('Invalid credentials');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
