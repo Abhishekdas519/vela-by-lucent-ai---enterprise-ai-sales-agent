@@ -14,10 +14,6 @@ const STATS = [
   { value: '3.4×', label: 'Conversion Lift', color: 'text-purple-600' },
 ];
 
-const TRUST_LOGOS = [
-  'Apex Logistics', 'NovaBridge SaaS', 'SolarForce', 'ClearCapital', 'FrontierMed', 'VastTech',
-];
-
 export const HeroSection: React.FC<HeroSectionProps> = ({
   onTryDemo,
   onOpenSignUp,
@@ -227,18 +223,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               <div className="text-xs text-slate-500 mt-1.5 font-medium">{stat.label}</div>
             </div>
           ))}
-        </div>
-
-        {/* Trust logos strip */}
-        <div className="mt-12 text-center">
-          <p className="text-xs text-slate-600 font-medium uppercase tracking-widest mb-5">Trusted by leading enterprises</p>
-          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-            {TRUST_LOGOS.map((logo, i) => (
-              <span key={i} className="text-sm font-bold text-slate-600 hover:text-slate-400 transition-colors cursor-default tracking-tight">
-                {logo}
-              </span>
-            ))}
-          </div>
         </div>
 
       </div>
