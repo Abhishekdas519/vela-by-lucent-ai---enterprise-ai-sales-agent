@@ -8,7 +8,7 @@ dotenv.config();
 
 const app = express();
 
-// CORS Configuration with domain whitelist
+// CORS Configuration with strict domain whitelist
 const allowedOrigins = [
   'https://velabylucentai.in',
   'https://www.velabylucentai.in',
@@ -21,11 +21,17 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Allow non-browser requests (server-to-server, curl, mobile apps)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+
+    const isAllowed = allowedOrigins.includes(origin) ||
+      /^https:\/\/vela-by-lucent-ai-[a-z0-9-]+-veloce-ai\.vercel\.app$/.test(origin) ||
+      /^https:\/\/[a-z0-9-]+\.velabylucentai\.in$/.test(origin);
+
+    if (isAllowed) {
       callback(null, true);
     } else {
-      callback(null, true);
+      callback(null, false);
     }
   },
   credentials: true,
@@ -101,9 +107,8 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    // Admin role strictly restricted to verified owner account
-    const isAdmin = cleanEmail === 'abhishekdas2090@gmail.com';
-    const role: 'admin' | 'client' = isAdmin ? 'admin' : 'client';
+    // Public signups always receive standard client role; admin roles must be granted directly in database
+    const role: 'client' = 'client';
     const userId = 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
 
     // Check if user already exists
@@ -235,7 +240,7 @@ app.post('/api/auth/signup', async (req, res) => {
         name: user.displayName || cleanEmail.split('@')[0],
         email: cleanEmail,
         role,
-        companyName: clientProfile?.companyName || (isAdmin ? 'Lucent AI Master Suite' : 'Client Organization'),
+        companyName: clientProfile?.companyName || 'Client Organization',
         clientId: clientProfile?.id
       },
       client: clientProfile

@@ -1,7 +1,21 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'vela_enterprise_jwt_super_secret_key_2026_production_guard_9837429182374982374';
+dotenv.config();
+
+const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL SECURITY CONFIGURATION: JWT_SECRET environment variable is missing in production.');
+    }
+    return 'vela_jwt_dev_local_secret_for_sandbox_and_unit_tests_only';
+  }
+  return secret;
+};
+
+const JWT_SECRET = getJwtSecret();
 
 export interface TokenPayload {
   uid: string;
