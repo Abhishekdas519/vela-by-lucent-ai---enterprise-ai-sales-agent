@@ -232,10 +232,10 @@ export async function getTalktimeRequests() {
   try {
     const orders = await db.select().from(talktimeRequests).orderBy(desc(talktimeRequests.createdAt));
     const allClients = await db.select().from(clients);
-    const clientMap = new Map(allClients.map(c => [c.id, c]));
+    const clientMap = new Map<string, typeof clients.$inferSelect>(allClients.map(c => [c.id, c]));
     
     return orders.map(order => {
-      const client = order.clientId ? clientMap.get(order.clientId) : null;
+      const client = order.clientId ? clientMap.get(order.clientId) : undefined;
       return {
         ...order,
         companyName: client?.companyName || 'Enterprise Client',
