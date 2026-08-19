@@ -60,6 +60,10 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           {/* Left Column: Copy & CTAs */}
           <div className="space-y-7">
             <div className="space-y-5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-xs font-bold text-cyan-700">
+                <Bot className="w-3.5 h-3.5 text-cyan-600" />
+                <span>Vela by Lucent AI — Enterprise Autonomous Voice Force</span>
+              </div>
               <h1 className="text-4xl sm:text-5xl lg:text-[3.4rem] font-extrabold tracking-tight text-slate-900 leading-[1.1]">
                 Replace Your Entire
                 <br />
@@ -67,11 +71,11 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                   Call Center Fleet
                 </span>
                 <br />
-                with One AI Agent.
+                with Vela by Lucent AI.
               </h1>
 
               <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
-                Vela autonomously dials thousands of qualified B2B leads daily with <strong className="text-slate-900 font-bold">human-grade sub-450ms voice</strong>, handles real objections, and triggers 12-hour follow-up pipelines. Guaranteed <strong className="text-cyan-700 font-bold">10% lower pricing</strong> than any call center or competitor.
+                <strong>Vela by Lucent AI</strong> autonomously dials thousands of qualified B2B leads daily with <strong className="text-slate-900 font-bold">human-grade sub-450ms voice latency</strong>, resolves objections effortlessly, and books qualified meetings directly into your calendar. Guaranteed <strong className="text-cyan-700 font-bold">10% lower pricing</strong> than manual call centers.
               </p>
             </div>
 

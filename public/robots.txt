@@ -1,8 +1,26 @@
-# Robots.txt for Vela by Lucent AI (velabylucentai.in)
+# Robots.txt for Vela by Lucent AI (https://velabylucentai.in)
 User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /admin
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
 
 # Host
 Host: https://velabylucentai.in
