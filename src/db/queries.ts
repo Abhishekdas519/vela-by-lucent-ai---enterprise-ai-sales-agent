@@ -1,6 +1,17 @@
 import { db } from './index.js';
 import { users, clients, callLogs, leads, talktimeRequests, meetings, adminNotifications } from './schema.js';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
+
+export async function checkDatabaseHealth() {
+  const start = Date.now();
+  try {
+    await db.execute(sql`SELECT 1`);
+    const latencyMs = Date.now() - start;
+    return { healthy: true, latencyMs };
+  } catch (error: any) {
+    return { healthy: false, latencyMs: Date.now() - start, error: error?.message || 'Database connection error' };
+  }
+}
 
 export async function getUserByEmail(email: string) {
   try {
@@ -72,13 +83,13 @@ export async function getOrCreateUser(uid: string, email: string, displayName?: 
     const result = await db.insert(users)
       .values({
         uid,
-        email: cleanEmail,
+        email,
         displayName: displayName || cleanEmail.split('@')[0],
       })
       .onConflictDoUpdate({
         target: users.uid,
         set: {
-          email: cleanEmail,
+          email,
           displayName: displayName || cleanEmail.split('@')[0],
         },
       })
@@ -174,6 +185,30 @@ export async function createLead(leadData: typeof leads.$inferInsert) {
   }
 }
 
+export async function createLeadsBatch(leadsList: (typeof leads.$inferInsert)[]) {
+  try {
+    if (!leadsList.length) return [];
+    const result = await db.insert(leads).values(leadsList).returning();
+    return result;
+  } catch (error) {
+    console.error("Database createLeadsBatch failed:", error);
+    throw new Error("Database createLeadsBatch failed.", { cause: error });
+  }
+}
+
+export async function updateLead(leadId: string, data: Partial<typeof leads.$inferInsert>) {
+  try {
+    const result = await db.update(leads)
+      .set(data)
+      .where(eq(leads.id, leadId))
+      .returning();
+    return result[0] || null;
+  } catch (error) {
+    console.error("Database updateLead failed:", error);
+    return null;
+  }
+}
+
 export async function getLeads() {
   try {
     return await db.select().from(leads).orderBy(desc(leads.createdAt));
@@ -229,16 +264,28 @@ export async function updateTalktimeRequestStatus(requestId: string, status: str
 
 export async function updateClientTalktime(clientId: string, addedMinutes: number) {
   try {
-    const client = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
-    if (!client.length) throw new Error("Client not found");
     const updated = await db.update(clients)
-      .set({ talktimeMinutesTotal: client[0].talktimeMinutesTotal + addedMinutes })
+      .set({ talktimeMinutesTotal: sql`${clients.talktimeMinutesTotal} + ${addedMinutes}` })
       .where(eq(clients.id, clientId))
       .returning();
+    if (!updated.length) throw new Error("Client not found");
     return updated[0];
   } catch (error) {
     console.error("Database update client talktime failed:", error);
     throw new Error("Database update client talktime failed.", { cause: error });
+  }
+}
+
+export async function deductClientTalktime(clientId: string, usedMinutes: number) {
+  try {
+    const updated = await db.update(clients)
+      .set({ talktimeMinutesUsed: sql`${clients.talktimeMinutesUsed} + ${usedMinutes}` })
+      .where(eq(clients.id, clientId))
+      .returning();
+    return updated[0] || null;
+  } catch (error) {
+    console.error("Database deduct client talktime failed:", error);
+    return null;
   }
 }
 

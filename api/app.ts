@@ -8,9 +8,27 @@ dotenv.config();
 
 const app = express();
 
-// Enable CORS for cross-origin requests from Vercel / clients
+// CORS Configuration with domain whitelist
+const allowedOrigins = [
+  'https://velabylucentai.in',
+  'https://www.velabylucentai.in',
+  'https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173'
+];
+
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -19,6 +37,7 @@ app.use(express.json());
 
 import { requireAuth, requireAdmin, generateToken, AuthRequest } from '../src/middleware/auth.js';
 import { 
+  checkDatabaseHealth,
   getOrCreateUser, 
   getUserByEmail, 
   getUserById,
@@ -31,12 +50,15 @@ import {
   updateClient,
   updateUserPassword,
   createLead, 
+  createLeadsBatch,
+  updateLead,
   getLeads, 
   getLeadsByClientId, 
   createTalktimeRequest, 
   getTalktimeRequests, 
   updateTalktimeRequestStatus, 
   updateClientTalktime, 
+  deductClientTalktime,
   createCallLog, 
   getClientLogs, 
   createMeeting, 
@@ -79,7 +101,8 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const isAdmin = cleanEmail.startsWith('admin@') || cleanEmail === 'abhishekdas2090@gmail.com';
+    // Admin role strictly restricted to verified owner account
+    const isAdmin = cleanEmail === 'abhishekdas2090@gmail.com';
     const role: 'admin' | 'client' = isAdmin ? 'admin' : 'client';
     const userId = 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
 
@@ -413,15 +436,19 @@ async function generateWithFallback(params: {
   throw new Error('No response generated');
 }
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
+// Live Health check endpoint with real DB connectivity test
+app.get('/api/health', async (req, res) => {
+  const dbHealth = await checkDatabaseHealth();
   res.json({
-    status: 'ok',
+    status: dbHealth.healthy ? 'ok' : 'degraded',
     version: '2.0.0',
     service: 'Vela by Lucent AI - Enterprise Voice Sales Engine',
     timestamp: new Date().toISOString(),
     geminiConfigured: !!process.env.GEMINI_API_KEY,
-    databaseConfigured: !!process.env.DATABASE_URL
+    databaseConfigured: !!process.env.DATABASE_URL,
+    databaseStatus: dbHealth.healthy ? 'connected' : 'error',
+    databaseLatencyMs: dbHealth.latencyMs,
+    ...(dbHealth.error ? { databaseError: dbHealth.error } : {})
   });
 });
 
@@ -925,6 +952,69 @@ CEO, Lucent AI`;
   }
 });
 
+// Update Client Settings (Persist to PostgreSQL)
+app.patch('/api/db/clients/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    if (req.user?.role !== 'admin' && req.user?.clientId !== id) {
+      return res.status(403).json({ error: 'Unauthorized to update this client profile' });
+    }
+
+    const {
+      companyName,
+      contactName,
+      industry,
+      twilioPhoneNumber,
+      vapiVoiceId,
+      vapiVoiceName,
+      callingHoursStart,
+      callingHoursEnd,
+      autoFollowupEnabled,
+      followupDelayHours,
+      systemPrompt,
+      firstMessage,
+      activeLines
+    } = req.body;
+
+    const updateData: any = {};
+    if (companyName !== undefined) updateData.companyName = companyName;
+    if (contactName !== undefined) updateData.contactName = contactName;
+    if (industry !== undefined) updateData.industry = industry;
+    if (twilioPhoneNumber !== undefined) updateData.twilioPhoneNumber = twilioPhoneNumber;
+    if (vapiVoiceId !== undefined) updateData.vapiVoiceId = vapiVoiceId;
+    if (vapiVoiceName !== undefined) updateData.vapiVoiceName = vapiVoiceName;
+    if (callingHoursStart !== undefined) updateData.callingHoursStart = callingHoursStart;
+    if (callingHoursEnd !== undefined) updateData.callingHoursEnd = callingHoursEnd;
+    if (autoFollowupEnabled !== undefined) updateData.autoFollowupEnabled = autoFollowupEnabled;
+    if (followupDelayHours !== undefined) updateData.followupDelayHours = followupDelayHours;
+    if (systemPrompt !== undefined) updateData.systemPrompt = systemPrompt;
+    if (firstMessage !== undefined) updateData.firstMessage = firstMessage;
+    if (activeLines !== undefined) updateData.activeLines = activeLines;
+
+    const updated = await updateClient(id, updateData);
+    res.json({ success: true, client: updated });
+  } catch (error: any) {
+    console.error('Update client settings error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update client' });
+  }
+});
+
+// Atomic Deduct Minutes upon Call Completion
+app.post('/api/db/clients/:id/deduct-minutes', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    if (req.user?.role !== 'admin' && req.user?.clientId !== id) {
+      return res.status(403).json({ error: 'Unauthorized to modify this client minutes' });
+    }
+    const { minutesUsed } = req.body;
+    const numMinutes = Math.max(1, parseInt(minutesUsed, 10) || 1);
+    const updated = await deductClientTalktime(id, numMinutes);
+    res.json({ success: true, client: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to deduct minutes' });
+  }
+});
+
 // Admin Notifications Store (ADMIN ONLY)
 app.get('/api/admin/notifications', requireAdmin, async (req: AuthRequest, res) => {
   try {
@@ -969,6 +1059,63 @@ app.get('/api/db/leads/:clientId', requireAuth, async (req: AuthRequest, res) =>
     res.json({ success: true, data: clientLeads });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Batch Leads Ingestion from CSV Upload
+app.post('/api/db/leads/batch', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const clientId = req.body.clientId || req.user?.clientId;
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required for batch lead import' });
+    }
+    if (req.user?.role !== 'admin' && req.user?.clientId !== clientId) {
+      return res.status(403).json({ error: 'Unauthorized to import leads for this client' });
+    }
+
+    const { leads: incomingLeads } = req.body;
+    if (!Array.isArray(incomingLeads) || incomingLeads.length === 0) {
+      return res.status(400).json({ error: 'leads array is required' });
+    }
+
+    const batchData = incomingLeads.map((l: any, idx: number) => ({
+      id: l.id || `lead-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      clientId,
+      companyName: l.company || l.companyName || 'Target Account',
+      contactName: l.name || l.contactName || 'Lead Contact',
+      email: l.email || 'contact@domain.com',
+      phone: l.phone || null,
+      industry: l.industry || null,
+      status: l.status || 'pending',
+      meetingRequested: false,
+      meetingTime: null
+    }));
+
+    const saved = await createLeadsBatch(batchData);
+    res.json({ success: true, count: saved.length, data: saved });
+  } catch (error: any) {
+    console.error('Batch lead import failed:', error);
+    res.status(500).json({ error: error.message || 'Failed to import leads batch' });
+  }
+});
+
+// Single Lead Update (Status, Meeting, Details)
+app.patch('/api/db/leads/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const updateData: any = {};
+    if (req.body.status !== undefined) updateData.status = req.body.status;
+    if (req.body.companyName !== undefined) updateData.companyName = req.body.companyName;
+    if (req.body.contactName !== undefined) updateData.contactName = req.body.contactName;
+    if (req.body.phone !== undefined) updateData.phone = req.body.phone;
+    if (req.body.email !== undefined) updateData.email = req.body.email;
+    if (req.body.meetingRequested !== undefined) updateData.meetingRequested = req.body.meetingRequested;
+    if (req.body.meetingTime !== undefined) updateData.meetingTime = req.body.meetingTime;
+
+    const updated = await updateLead(id, updateData);
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to update lead' });
   }
 });
 

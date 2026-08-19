@@ -44,6 +44,50 @@ interface ClientDashboardProps {
   onOpenBuyMinutes: () => void;
 }
 
+// RFC 4180 Compliant CSV Parser
+function parseRFC4180CSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (char === '"') {
+      if (insideQuotes && nextChar === '"') {
+        currentField += '"';
+        i++; // skip escaped quote
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === ',' && !insideQuotes) {
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+      if (char === '\r' && nextChar === '\n') i++;
+      currentRow.push(currentField.trim());
+      if (currentRow.some(f => f.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some(f => f.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+}
+
 export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   client,
   leads,
@@ -52,6 +96,17 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   onUpdateLeads,
   onOpenBuyMinutes,
 }) => {
+  // Sync refs to avoid stale closure corruption during async loops
+  const leadsRef = useRef<Lead[]>(leads);
+  useEffect(() => {
+    leadsRef.current = leads;
+  }, [leads]);
+
+  const clientRef = useRef<ClientProfile>(client);
+  useEffect(() => {
+    clientRef.current = client;
+  }, [client]);
+
   const authFetch = async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('vela_token');
     const headers: Record<string, string> = {
@@ -85,6 +140,44 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   const [followupHours, setFollowupHours] = useState(client.followupDelayHours);
   const [systemPrompt, setSystemPrompt] = useState(client.systemPrompt);
   const [firstMessage, setFirstMessage] = useState(client.firstMessage);
+  const [settingsToast, setSettingsToast] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // Load historical call logs on mount
+  useEffect(() => {
+    if (client?.id) {
+      authFetch(`/api/db/call-logs/${client.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data?.success && Array.isArray(data.data) && data.data.length > 0) {
+            const logsByPhone = new Map(data.data.map((log: any) => [log.leadPhone, log]));
+            const updated = leadsRef.current.map(lead => {
+              const match = logsByPhone.get(lead.phone);
+              if (match && lead.status === 'pending') {
+                let parsedTranscript = [];
+                try { parsedTranscript = typeof match.transcript === 'string' ? JSON.parse(match.transcript) : match.transcript; } catch {}
+                let parsedFollowup = null;
+                try { parsedFollowup = typeof match.followupDraft === 'string' ? JSON.parse(match.followupDraft) : match.followupDraft; } catch {}
+                return {
+                  ...lead,
+                  status: 'completed' as const,
+                  callDurationSeconds: match.callDurationSeconds || 120,
+                  sentiment: (match.sentiment || 'positive') as any,
+                  conversionChance: match.conversionChance || 75,
+                  aiConclusion: match.aiConclusion || '',
+                  transcript: parsedTranscript,
+                  followupDraft: parsedFollowup
+                };
+              }
+              return lead;
+            });
+            leadsRef.current = updated;
+            onUpdateLeads(updated);
+          }
+        })
+        .catch(err => console.error('Failed to load historical call logs:', err));
+    }
+  }, [client?.id]);
 
   const minutesLeft = Math.max(0, client.talktimeMinutesTotal - client.talktimeMinutesUsed);
   const usagePercentage = Math.min(100, Math.round((client.talktimeMinutesUsed / client.talktimeMinutesTotal) * 100));
@@ -114,42 +207,70 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   const highIntentLeads = completedCalls.filter(l => (l.conversionChance || 0) >= 70).length;
   const followupsQueued = clientLeads.filter(l => l.status === 'followup_queued' || l.followupScheduledAt).length;
 
-  // Parse CSV helper
+  // Parse CSV helper using RFC 4180 engine
   const parseCSVContent = (csvText: string) => {
-    const lines = csvText.trim().split('\n');
-    if (lines.length < 2) return;
+    const parsedRows = parseRFC4180CSV(csvText.trim());
+    if (parsedRows.length < 2) return;
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const nameIdx = headers.findIndex(h => h.includes('name'));
+    const headers = parsedRows[0].map(h => h.toLowerCase());
+    const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('contact'));
     const phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('tel') || h.includes('mobile'));
     const emailIdx = headers.findIndex(h => h.includes('email') || h.includes('mail'));
-    const compIdx = headers.findIndex(h => h.includes('company') || h.includes('org') || h.includes('business'));
+    const compIdx = headers.findIndex(h => h.includes('company') || h.includes('org') || h.includes('business') || h.includes('account'));
     const titleIdx = headers.findIndex(h => h.includes('title') || h.includes('role') || h.includes('position'));
     const notesIdx = headers.findIndex(h => h.includes('note') || h.includes('comment'));
 
     const newParsedLeads: Lead[] = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const row = lines[i].split(',').map(r => r.trim());
-      if (row.length >= 2) {
+    for (let i = 1; i < parsedRows.length; i++) {
+      const row = parsedRows[i];
+      if (row.length >= 1) {
+        const leadName = nameIdx !== -1 && row[nameIdx] ? row[nameIdx] : (row[0] || 'Lead Contact');
+        const leadPhone = phoneIdx !== -1 && row[phoneIdx] ? row[phoneIdx] : (row[1] || '+1 (555) 000-0000');
+        const leadEmail = emailIdx !== -1 && row[emailIdx] ? row[emailIdx] : (row[2] || 'contact@domain.com');
+        const leadCompany = compIdx !== -1 && row[compIdx] ? row[compIdx] : (row[3] || 'Target Account');
+        const leadTitle = titleIdx !== -1 && row[titleIdx] ? row[titleIdx] : 'Decision Maker';
+        const leadNotes = notesIdx !== -1 && row[notesIdx] ? row[notesIdx] : 'Imported via CSV Batch Upload';
+
         newParsedLeads.push({
-          id: `lead-${Date.now()}-${i}`,
+          id: `lead-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
           clientId: client.id,
-          name: nameIdx !== -1 ? row[nameIdx] : (row[0] || 'Lead Contact'),
-          phone: phoneIdx !== -1 ? row[phoneIdx] : (row[1] || '+1 (555) 000-0000'),
-          email: emailIdx !== -1 ? row[emailIdx] : (row[2] || 'contact@domain.com'),
-          company: compIdx !== -1 ? row[compIdx] : (row[3] || 'Target Account'),
-          title: titleIdx !== -1 ? row[titleIdx] : 'Decision Maker',
-          notes: notesIdx !== -1 ? row[notesIdx] : 'Imported via CSV Batch Upload',
+          name: leadName,
+          phone: leadPhone,
+          email: leadEmail,
+          company: leadCompany,
+          title: leadTitle,
+          notes: leadNotes,
           status: 'pending'
         });
       }
     }
 
     if (newParsedLeads.length > 0) {
-      onUpdateLeads([...newParsedLeads, ...leads]);
-      setUploadMessage(`Successfully imported ${newParsedLeads.length} leads into auto-dial queue!`);
-      setTimeout(() => setUploadMessage(null), 4000);
+      const merged = [...newParsedLeads, ...leadsRef.current];
+      leadsRef.current = merged;
+      onUpdateLeads(merged);
+      setUploadMessage(`Imported ${newParsedLeads.length} leads. Saving to database...`);
+
+      // Bulk persist to PostgreSQL
+      authFetch('/api/db/leads/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: client.id,
+          leads: newParsedLeads
+        })
+      }).then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setUploadMessage(`✅ Successfully imported and saved ${newParsedLeads.length} leads in database!`);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to batch save leads in DB:', err);
+        })
+        .finally(() => {
+          setTimeout(() => setUploadMessage(null), 4000);
+        });
     }
   };
 
@@ -190,23 +311,24 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
       const lead = queue[i];
       setCurrentDialingLeadId(lead.id);
 
-      // Update status to 'calling'
-      const updatedQueue = leads.map(l => l.id === lead.id ? { ...l, status: 'calling' as const } : l);
-      onUpdateLeads(updatedQueue);
+      // Update status to 'calling' using ref
+      const callingList = leadsRef.current.map(l => l.id === lead.id ? { ...l, status: 'calling' as const } : l);
+      leadsRef.current = callingList;
+      onUpdateLeads(callingList);
 
       try {
         // Call backend simulate endpoint
         const response = await authFetch('/api/call/simulate', {
           method: 'POST',
-          body: JSON.stringify({ lead, clientProfile: client })
+          body: JSON.stringify({ lead, clientProfile: clientRef.current })
         });
         const result = await response.json();
 
         // Calculate followup time
-        const followDate = new Date(Date.now() + (client.followupDelayHours * 60 * 60 * 1000)).toISOString();
+        const followDate = new Date(Date.now() + (clientRef.current.followupDelayHours * 60 * 60 * 1000)).toISOString();
 
-        // Update lead with complete call intelligence
-        const finishedLeads = leads.map(l => {
+        // Update lead with complete call intelligence using fresh leadsRef.current
+        const completedList = leadsRef.current.map(l => {
           if (l.id === lead.id) {
             return {
               ...l,
@@ -214,7 +336,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
               callDurationSeconds: result.callDurationSeconds || 120,
               callStartedAt: new Date(Date.now() - 120000).toISOString(),
               callEndedAt: new Date().toISOString(),
-              sentiment: result.sentiment || 'positive',
+              sentiment: (result.sentiment || 'positive') as any,
               conversionChance: result.conversionChance || 75,
               aiConclusion: result.aiConclusion || 'Lead qualified. High interest in product demo.',
               keyObjections: result.keyObjections || [],
@@ -222,7 +344,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
               followupSent: false,
               followupDraft: result.followupDraft || {
                 channel: 'email',
-                subject: `Follow-up from ${client.companyName}`,
+                subject: `Follow-up from ${clientRef.current.companyName}`,
                 body: `Hi ${lead.name},\n\nThank you for taking my call today. As discussed, here is the demo link.\n\nBest regards,\nVela AI`
               },
               transcript: result.transcript || []
@@ -231,40 +353,57 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
           return l;
         });
 
-        onUpdateLeads(finishedLeads);
+        leadsRef.current = completedList;
+        onUpdateLeads(completedList);
 
-        // Persist call log to database
-        try {
-          const finishedLead = finishedLeads.find(l => l.id === lead.id);
-          if (finishedLead) {
-            authFetch('/api/db/call-logs', {
-              method: 'POST',
-              body: JSON.stringify({
-                clientId: client.id,
-                leadName: lead.name,
-                leadPhone: lead.phone,
-                leadCompany: lead.company,
-                callDurationSeconds: result.callDurationSeconds || 120,
-                disposition: 'completed',
-                sentiment: result.sentiment || 'positive',
-                conversionChance: result.conversionChance || 75,
-                aiConclusion: result.aiConclusion || '',
-                transcript: result.transcript || [],
-                followupDraft: result.followupDraft || null,
-              })
-            }).catch(() => {});
-          }
-        } catch {}
+        // 1. Persist lead status update to database
+        authFetch(`/api/db/leads/${lead.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'completed' })
+        }).catch(e => console.error('Failed to update lead status in DB:', e));
 
-        // Deduct talktime minutes
+        // 2. Persist call log to database
+        authFetch('/api/db/call-logs', {
+          method: 'POST',
+          body: JSON.stringify({
+            clientId: clientRef.current.id,
+            leadName: lead.name,
+            leadPhone: lead.phone,
+            leadCompany: lead.company,
+            callDurationSeconds: result.callDurationSeconds || 120,
+            disposition: 'completed',
+            sentiment: result.sentiment || 'positive',
+            conversionChance: result.conversionChance || 75,
+            aiConclusion: result.aiConclusion || '',
+            transcript: result.transcript || [],
+            followupDraft: result.followupDraft || null,
+          })
+        }).catch(e => console.error('Failed to persist call log in DB:', e));
+
+        // 3. Atomically deduct talktime minutes in database
         const usedMins = Math.ceil((result.callDurationSeconds || 120) / 60);
-        onUpdateClient({
-          ...client,
-          talktimeMinutesUsed: client.talktimeMinutesUsed + usedMins
-        });
+        authFetch(`/api/db/clients/${clientRef.current.id}/deduct-minutes`, {
+          method: 'POST',
+          body: JSON.stringify({ minutesUsed: usedMins })
+        }).then(r => r.json())
+          .then(data => {
+            if (data?.success && data.client) {
+              clientRef.current = data.client;
+              onUpdateClient(data.client);
+            }
+          })
+          .catch(() => {});
+
+        // Local state deduction
+        const updatedClient = {
+          ...clientRef.current,
+          talktimeMinutesUsed: clientRef.current.talktimeMinutesUsed + usedMins
+        };
+        clientRef.current = updatedClient;
+        onUpdateClient(updatedClient);
 
         // Delay between calls for realism
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 1500));
       } catch (err) {
         console.error('Call failed:', err);
       }
@@ -278,19 +417,21 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   // Instant Single Lead Dial
   const handleDialSingleLead = async (lead: Lead) => {
     setCurrentDialingLeadId(lead.id);
-    const updated = leads.map(l => l.id === lead.id ? { ...l, status: 'calling' as const } : l);
-    onUpdateLeads(updated);
+    const callingList = leadsRef.current.map(l => l.id === lead.id ? { ...l, status: 'calling' as const } : l);
+    leadsRef.current = callingList;
+    onUpdateLeads(callingList);
 
     try {
       const response = await authFetch('/api/call/simulate', {
         method: 'POST',
-        body: JSON.stringify({ lead, clientProfile: client })
+        body: JSON.stringify({ lead, clientProfile: clientRef.current })
       });
       const result = await response.json();
 
-      const followDate = new Date(Date.now() + (client.followupDelayHours * 60 * 60 * 1000)).toISOString();
+      const followDate = new Date(Date.now() + (clientRef.current.followupDelayHours * 60 * 60 * 1000)).toISOString();
 
-      const finishedLeads = leads.map(l => {
+      let completedLeadRecord: Lead | null = null;
+      const completedList = leadsRef.current.map(l => {
         if (l.id === lead.id) {
           const completedLead: Lead = {
             ...l,
@@ -298,7 +439,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
             callDurationSeconds: result.callDurationSeconds || 120,
             callStartedAt: new Date(Date.now() - 120000).toISOString(),
             callEndedAt: new Date().toISOString(),
-            sentiment: result.sentiment || 'positive',
+            sentiment: (result.sentiment || 'positive') as any,
             conversionChance: result.conversionChance || 80,
             aiConclusion: result.aiConclusion || 'Conversation completed.',
             keyObjections: result.keyObjections || [],
@@ -307,42 +448,60 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
             followupDraft: result.followupDraft,
             transcript: result.transcript
           };
-          setSelectedLead(completedLead);
+          completedLeadRecord = completedLead;
           return completedLead;
         }
         return l;
       });
 
-      onUpdateLeads(finishedLeads);
+      leadsRef.current = completedList;
+      onUpdateLeads(completedList);
+      if (completedLeadRecord) {
+        setSelectedLead(completedLeadRecord);
+      }
 
-      // Persist single call log to database
-      try {
-        const finishedLead = finishedLeads.find(l => l.id === lead.id);
-        if (finishedLead) {
-          authFetch('/api/db/call-logs', {
-            method: 'POST',
-            body: JSON.stringify({
-              clientId: client.id,
-              leadName: lead.name,
-              leadPhone: lead.phone,
-              leadCompany: lead.company,
-              callDurationSeconds: result.callDurationSeconds || 120,
-              disposition: 'completed',
-              sentiment: result.sentiment || 'positive',
-              conversionChance: result.conversionChance || 80,
-              aiConclusion: result.aiConclusion || '',
-              transcript: result.transcript || [],
-              followupDraft: result.followupDraft || null,
-            })
-          }).catch(() => {});
-        }
-      } catch {}
+      // Persist single lead status and call log to database
+      authFetch(`/api/db/leads/${lead.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'completed' })
+      }).catch(() => {});
+
+      authFetch('/api/db/call-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: clientRef.current.id,
+          leadName: lead.name,
+          leadPhone: lead.phone,
+          leadCompany: lead.company,
+          callDurationSeconds: result.callDurationSeconds || 120,
+          disposition: 'completed',
+          sentiment: result.sentiment || 'positive',
+          conversionChance: result.conversionChance || 80,
+          aiConclusion: result.aiConclusion || '',
+          transcript: result.transcript || [],
+          followupDraft: result.followupDraft || null,
+        })
+      }).catch(() => {});
 
       const usedMins = Math.ceil((result.callDurationSeconds || 120) / 60);
-      onUpdateClient({
-        ...client,
-        talktimeMinutesUsed: client.talktimeMinutesUsed + usedMins
-      });
+      authFetch(`/api/db/clients/${clientRef.current.id}/deduct-minutes`, {
+        method: 'POST',
+        body: JSON.stringify({ minutesUsed: usedMins })
+      }).then(r => r.json())
+        .then(data => {
+          if (data?.success && data.client) {
+            clientRef.current = data.client;
+            onUpdateClient(data.client);
+          }
+        })
+        .catch(() => {});
+
+      const updatedClient = {
+        ...clientRef.current,
+        talktimeMinutesUsed: clientRef.current.talktimeMinutesUsed + usedMins
+      };
+      clientRef.current = updatedClient;
+      onUpdateClient(updatedClient);
     } catch (err) {
       console.error('Single call error:', err);
     } finally {
@@ -455,18 +614,47 @@ Generated by Vela Autonomous Telephony Platform
     document.body.removeChild(link);
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateClient({
-      ...client,
-      callingHoursStart: callingStart,
-      callingHoursEnd: callingEnd,
-      autoFollowupEnabled: autoFollowup,
-      followupDelayHours: followupHours,
-      systemPrompt: systemPrompt,
-      firstMessage: firstMessage
-    });
-    alert("Telephony & Follow-Up settings saved successfully!");
+    setIsSavingSettings(true);
+    try {
+      const res = await authFetch(`/api/db/clients/${client.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          callingHoursStart: callingStart,
+          callingHoursEnd: callingEnd,
+          autoFollowupEnabled: autoFollowup,
+          followupDelayHours: followupHours,
+          systemPrompt: systemPrompt,
+          firstMessage: firstMessage
+        })
+      });
+      const data = await res.json();
+      if (data?.success && data.client) {
+        clientRef.current = data.client;
+        onUpdateClient(data.client);
+        setSettingsToast('✅ Telephony & Calling Window settings saved to database!');
+      } else {
+        const updated = {
+          ...client,
+          callingHoursStart: callingStart,
+          callingHoursEnd: callingEnd,
+          autoFollowupEnabled: autoFollowup,
+          followupDelayHours: followupHours,
+          systemPrompt: systemPrompt,
+          firstMessage: firstMessage
+        };
+        clientRef.current = updated;
+        onUpdateClient(updated);
+        setSettingsToast('Settings updated in session.');
+      }
+    } catch (err) {
+      console.error('Save settings error:', err);
+      setSettingsToast('Settings updated.');
+    } finally {
+      setIsSavingSettings(false);
+      setTimeout(() => setSettingsToast(null), 4000);
+    }
   };
 
   return (
@@ -1061,12 +1249,27 @@ Generated by Vela Autonomous Telephony Platform
                 />
               </div>
 
+              {settingsToast && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{settingsToast}</span>
+                </div>
+              )}
+
               <button
                 type="submit"
                 id="btn-save-client-settings"
-                className="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition cursor-pointer"
+                disabled={isSavingSettings}
+                className="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-2"
               >
-                Save Telephony Settings
+                {isSavingSettings ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving to Database...</span>
+                  </>
+                ) : (
+                  <span>Save Telephony Settings</span>
+                )}
               </button>
             </form>
           </div>

@@ -128,6 +128,31 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // 2b. Fetch live database leads for client/admin
+  useEffect(() => {
+    if (currentUser) {
+      authFetch('/api/db/leads')
+        .then(res => res.json())
+        .then(data => {
+          if (data?.success && Array.isArray(data.data)) {
+            const mappedLeads: Lead[] = data.data.map((l: any) => ({
+              id: l.id,
+              clientId: l.clientId || activeClient?.id || '',
+              name: l.contactName || 'Lead Contact',
+              phone: l.phone || '+1 (555) 000-0000',
+              email: l.email || 'contact@domain.com',
+              company: l.companyName || 'Target Account',
+              title: 'Decision Maker',
+              status: (l.status === 'completed' ? 'completed' : 'pending') as any,
+              notes: l.industry || 'Database Lead'
+            }));
+            setLeads(mappedLeads);
+          }
+        })
+        .catch(err => console.error('Failed to load user leads from DB:', err));
+    }
+  }, [currentUser, activeClient?.id]);
+
   // 3. Routing listeners
   useEffect(() => {
     const hostname = window.location.hostname;
