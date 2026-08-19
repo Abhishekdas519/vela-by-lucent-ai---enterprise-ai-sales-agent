@@ -47,7 +47,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [orders, setOrders] = useState<any[]>([]);
   const [meetings, setMeetings] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   
   const [onboardModalOpen, setOnboardModalOpen] = useState(false);
   const [onboardClient, setOnboardClient] = useState<ClientProfile | null>(null);

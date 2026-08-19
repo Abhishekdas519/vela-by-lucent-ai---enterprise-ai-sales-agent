@@ -89,6 +89,28 @@ export default function App() {
           setCurrentUser(data.user);
           if (data.client) {
             setActiveClient(data.client);
+          } else if (data.user.role === 'client') {
+            setActiveClient({
+              id: data.user.clientId || ('client-' + data.user.id.slice(-6)),
+              companyName: data.user.companyName || `${data.user.name}'s Organization`,
+              contactName: data.user.name,
+              email: data.user.email,
+              industry: 'B2B Enterprise',
+              status: 'active',
+              twilioPhoneNumber: '+1 (800) 555-VELA',
+              vapiVoiceName: 'Cartesia Sonic (Warm Authority)',
+              systemPrompt: 'You are Vela. Qualify prospects and book calendar meetings.',
+              firstMessage: 'Hi! This is Vela calling. Do you have 60 seconds?',
+              talktimeMinutesTotal: 5000,
+              talktimeMinutesUsed: 0,
+              activeLines: 5,
+              callingHoursStart: '09:00',
+              callingHoursEnd: '18:00',
+              timezone: 'America/New_York (EST)',
+              autoFollowupEnabled: true,
+              followupDelayHours: 12,
+              subscriptionPlan: 'starter'
+            });
           }
           // Redirect to appropriate dashboard if on portal route
           const path = window.location.pathname;
@@ -198,6 +220,28 @@ export default function App() {
     } else {
       if (client) {
         setActiveClient(client);
+      } else {
+        setActiveClient({
+          id: user.clientId || ('client-' + user.id.slice(-6)),
+          companyName: user.companyName || `${user.name}'s Organization`,
+          contactName: user.name,
+          email: user.email,
+          industry: 'B2B Enterprise',
+          status: 'active',
+          twilioPhoneNumber: '+1 (800) 555-VELA',
+          vapiVoiceName: 'Cartesia Sonic (Warm Authority)',
+          systemPrompt: 'You are Vela. Qualify prospects and book calendar meetings.',
+          firstMessage: 'Hi! This is Vela calling. Do you have 60 seconds?',
+          talktimeMinutesTotal: 5000,
+          talktimeMinutesUsed: 0,
+          activeLines: 5,
+          callingHoursStart: '09:00',
+          callingHoursEnd: '18:00',
+          timezone: 'America/New_York (EST)',
+          autoFollowupEnabled: true,
+          followupDelayHours: 12,
+          subscriptionPlan: 'starter'
+        });
       }
       setCurrentView('client_dashboard');
     }

@@ -28,6 +28,11 @@ import {
   ChevronRight,
   Send,
   Users,
+  Shield,
+  Eye,
+  EyeOff,
+  Lock,
+  Key,
   X
 } from 'lucide-react';
 import { ClientProfile, Lead, User } from '../types';
@@ -200,7 +205,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
         .then(res => res.json())
         .then(data => {
           if (data?.success && Array.isArray(data.data) && data.data.length > 0) {
-            const logsByPhone = new Map(data.data.map((log: any) => [log.leadPhone, log]));
+            const logsByPhone = new Map<string, any>(data.data.map((log: any) => [log.leadPhone, log]));
             const updated = leadsRef.current.map(lead => {
               const match = logsByPhone.get(lead.phone);
               if (match && lead.status === 'pending') {
