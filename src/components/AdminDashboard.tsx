@@ -22,7 +22,8 @@ import {
   FileText,
   Search,
   Server,
-  Calendar
+  Calendar,
+  Copy
 } from 'lucide-react';
 import { ClientProfile, User } from '../types';
 
@@ -46,7 +47,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [orders, setOrders] = useState<any[]>([]);
   const [meetings, setMeetings] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  
   const [onboardModalOpen, setOnboardModalOpen] = useState(false);
   const [onboardClient, setOnboardClient] = useState<ClientProfile | null>(null);
   const [twilioNumber, setTwilioNumber] = useState('');
@@ -67,7 +69,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const generatePassword = () => {
-    return 'VL-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '!' + Math.floor(Math.random() * 99);
+    return 'VL-2026-' + Math.random().toString(36).substring(2, 8).toUpperCase();
   };
   
   const loadCombinedNotifications = () => {
@@ -216,7 +218,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       // Generate automated email draft using mailto:
       const draft = data.welcomeEmailDraft;
       const subject = encodeURIComponent(`Welcome to Vela by Lucent AI - Your Autonomous Sales Agent is Ready`);
-      const body = encodeURIComponent(draft || `Hi ${onboardClient.contactName},\n\nWelcome to Vela! Your autonomous outbound voice agent has been fully provisioned.\n\nCLIENT PORTAL ACCESS:\nLogin URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login\nLogin ID: ${loginId}\nTemporary Password: ${pwd}\n\nBest regards,\nAbhishek Das\nCEO, Lucent AI`);
+      const body = encodeURIComponent(draft || `Hi ${onboardClient.contactName},\n\nWelcome to Vela! Your autonomous outbound voice agent has been fully provisioned.\n\nCLIENT PORTAL ACCESS:\nLogin URL: https://velabylucentai.in/login\nLogin ID: ${loginId}\nTemporary Password: ${pwd}\n\nBest regards,\nAbhishek Das\nCEO, Lucent AI`);
 
       window.location.href = `mailto:${loginId}?subject=${subject}&body=${body}`;
     } catch (err: any) {
@@ -442,11 +444,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-4 border-t border-slate-100">
+                <div className="flex gap-2 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const textToCopy = `VELA BY LUCENT AI - CLIENT PORTAL ACCESS\nCompany: ${onboardClient.companyName}\nLogin URL: https://velabylucentai.in/login\nLogin ID: ${onboardClient.email}\nTemporary Password: ${customPassword.trim() || generatePassword()}`;
+                      navigator.clipboard.writeText(textToCopy);
+                      showToast('📋 Credentials copied to clipboard!');
+                    }}
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 cursor-pointer"
+                    title="Copy credentials for Slack/WhatsApp/Email"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Copy</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setOnboardModalOpen(false)}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold hover:bg-slate-50 text-slate-700"
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold hover:bg-slate-50 text-slate-700 cursor-pointer"
                   >
                     Cancel
                   </button>

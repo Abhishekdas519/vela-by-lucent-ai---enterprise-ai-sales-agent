@@ -246,6 +246,27 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
+// Rate limiting map for authentication
+const loginAttempts = new Map<string, { count: number; resetTime: number }>();
+
+function checkLoginRateLimit(identifier: string): boolean {
+  const now = Date.now();
+  const entry = loginAttempts.get(identifier);
+  if (!entry || now > entry.resetTime) {
+    loginAttempts.set(identifier, { count: 1, resetTime: now + 15 * 60 * 1000 });
+    return true;
+  }
+  if (entry.count >= 15) {
+    return false;
+  }
+  entry.count++;
+  return true;
+}
+
+function resetLoginRateLimit(identifier: string) {
+  loginAttempts.delete(identifier);
+}
+
 // Real User Login & Session Verification API
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -258,6 +279,15 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+    const cleanPassword = password.toString();
+
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
+    const rateLimitKey = `${clientIp}_${cleanEmail}`;
+
+    if (!checkLoginRateLimit(rateLimitKey)) {
+      return res.status(429).json({ error: 'Too many failed login attempts. Please wait 15 minutes or reset your password.' });
+    }
+
     const user = await getUserByEmail(cleanEmail);
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -269,10 +299,16 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const isBcrypt = user.passwordHash.startsWith('$2a$') || user.passwordHash.startsWith('$2b$');
-    const isValid = isBcrypt ? bcrypt.compareSync(password, user.passwordHash) : (password === user.passwordHash);
+    const isValid = isBcrypt 
+      ? (bcrypt.compareSync(cleanPassword, user.passwordHash) || bcrypt.compareSync(cleanPassword.trim(), user.passwordHash))
+      : (cleanPassword === user.passwordHash || cleanPassword.trim() === user.passwordHash);
+
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+
+    // Reset rate limit on success
+    resetLoginRateLimit(rateLimitKey);
 
     const role = (user.role || 'client') as 'admin' | 'client';
     let clientProfile: any = null;
@@ -333,6 +369,52 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error: any) {
     console.error('Login error:', error);
     res.status(500).json({ error: error.message || 'Login failed' });
+  }
+});
+
+// Client & Admin Self-Service Password Change API
+app.post('/api/auth/change-password', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const authUser = req.user!;
+
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required' });
+    }
+    if (!newPassword || newPassword.trim().length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long' });
+    }
+
+    const user = await getUserById(authUser.uid) || await getUserByEmail(authUser.email);
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ error: 'User account not found or password not set' });
+    }
+
+    const isBcrypt = user.passwordHash.startsWith('$2a$') || user.passwordHash.startsWith('$2b$');
+    const isCurrentValid = isBcrypt
+      ? (bcrypt.compareSync(currentPassword, user.passwordHash) || bcrypt.compareSync(currentPassword.trim(), user.passwordHash))
+      : (currentPassword === user.passwordHash || currentPassword.trim() === user.passwordHash);
+
+    if (!isCurrentValid) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const salt = bcrypt.genSaltSync(12);
+    const newPasswordHash = bcrypt.hashSync(newPassword.trim(), salt);
+    await updateUserPassword(user.uid, newPasswordHash);
+
+    await createAdminNotification({
+      id: 'notif-' + Date.now(),
+      type: 'security',
+      title: '🔐 Password Changed',
+      message: `User ${user.email} successfully updated their account password.`,
+      read: false
+    });
+
+    res.json({ success: true, message: 'Password updated successfully' });
+  } catch (error: any) {
+    console.error('Password change error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update password' });
   }
 });
 
@@ -804,7 +886,7 @@ Welcome to Vela by Lucent AI! Your autonomous outbound voice sales fleet has bee
 
 ---
 CLIENT PORTAL ACCESS:
-Login URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login
+Login URL: https://velabylucentai.in/login
 Login ID: ${cleanEmail}
 Temporary Password: ${tempPassword}
 ---
@@ -826,7 +908,7 @@ CEO, Lucent AI`;
       credentials: {
         email: cleanEmail,
         temporaryPassword: tempPassword,
-        portalUrl: '/login'
+        portalUrl: 'https://velabylucentai.in/login'
       },
       welcomeEmailDraft
     });
@@ -856,8 +938,8 @@ app.post('/api/admin/provision-client', requireAdmin, async (req: AuthRequest, r
     const cleanEmail = email.toLowerCase().trim();
     const tempPassword = temporaryPassword && temporaryPassword.trim() 
       ? temporaryPassword.trim() 
-      : ('VL-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '!' + Math.floor(10 + Math.random() * 89));
-    const salt = bcrypt.genSaltSync(10);
+      : ('VL-2026-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+    const salt = bcrypt.genSaltSync(12);
     const passwordHash = bcrypt.hashSync(tempPassword, salt);
 
     // 1. Create or update User password
@@ -925,7 +1007,7 @@ Vapi Assistant Node: ${client?.vapiAssistantId || vapiAssistantId || 'Auto-Provi
 
 ---
 CLIENT PORTAL ACCESS:
-Login URL: https://vela-by-lucent-ai-enterprise-ai-sal.vercel.app/login
+Login URL: https://velabylucentai.in/login
 Login ID: ${cleanEmail}
 Temporary Password: ${tempPassword}
 ---
@@ -942,7 +1024,7 @@ CEO, Lucent AI`;
       credentials: {
         email: cleanEmail,
         temporaryPassword: tempPassword,
-        portalUrl: '/login'
+        portalUrl: 'https://velabylucentai.in/login'
       },
       welcomeEmailDraft
     });
