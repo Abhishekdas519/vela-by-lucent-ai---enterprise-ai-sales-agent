@@ -607,6 +607,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <button
               id="btn-admin-onboard-new"
               onClick={() => {
+                setCustomPassword(generatePassword());
                 setIsOnboardingOpen(true);
                 setStep(1);
               }}
@@ -780,6 +781,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               setOnboardClient(client);
                               setTwilioNumber(client.twilioPhoneNumber || '');
                               setVapiId(client.vapiAssistantId || '');
+                              setCustomPassword(generatePassword());
                               setOnboardModalOpen(true);
                             }}
                             className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-[10px] sm:text-xs transition flex items-center gap-1.5"
@@ -839,6 +841,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             setNewCompanyName(lead.companyName);
                             setNewContactName(lead.contactName);
                             setNewEmail(lead.email);
+                            setCustomPassword(generatePassword());
                             setIsOnboardingOpen(true);
                             setStep(1);
                           }}

@@ -16,7 +16,7 @@ export async function checkDatabaseHealth() {
 export async function getUserByEmail(email: string) {
   try {
     const cleanEmail = email.toLowerCase().trim();
-    const result = await db.select().from(users).where(eq(users.email, cleanEmail)).limit(1);
+    const result = await db.select().from(users).where(sql`LOWER(TRIM(${users.email})) = ${cleanEmail}`).limit(1);
     return result[0] || null;
   } catch (error) {
     console.error("Database getUserByEmail failed:", error);
@@ -60,7 +60,8 @@ export async function getClientByUserId(userId: string) {
 
 export async function getClientByEmail(email: string) {
   try {
-    const result = await db.select().from(clients).where(eq(clients.email, email.toLowerCase().trim())).limit(1);
+    const cleanEmail = email.toLowerCase().trim();
+    const result = await db.select().from(clients).where(sql`LOWER(TRIM(${clients.email})) = ${cleanEmail}`).limit(1);
     return result[0] || null;
   } catch (error) {
     console.error("Database getClientByEmail failed:", error);
